@@ -1,0 +1,64 @@
+name: employee-crud
+description: Employee create, read, update lifecycle
+module: employee
+legacy_package: PKG_EMPLOYEE
+modern_endpoint: /api/employees
+
+steps:
+  - name: Create a new employee
+    action: create
+    input:
+      first_name: "JANE"
+      last_name: "TESTSMITH"
+      email: "jane.testsmith@company.com"
+      hire_date: "2024-06-01"
+      dept_id: 31
+      job_id: 50
+      manager_emp_id: 31
+      location_code: "CHI"
+      employment_type: "FULL_TIME"
+      gender: "F"
+      starting_salary: 75000
+    expect:
+      employment_status: "ACTIVE"
+      active_flag: "Y"
+      emp_number: "EMP-*"
+    save_as: new_employee
+
+  - name: Read the created employee
+    action: read
+    input:
+      emp_id: "{{new_employee.emp_id}}"
+    expect:
+      first_name: "JANE"
+      last_name: "TESTSMITH"
+      dept_id: 31
+      employment_status: "ACTIVE"
+
+  - name: Update employee department (transfer)
+    action: transfer
+    input:
+      emp_id: "{{new_employee.emp_id}}"
+      new_dept_id: 32
+      effective_date: "2024-09-01"
+      reason: "Reorganization"
+    expect:
+      dept_id: 32
+
+  - name: Search for employee by name
+    action: search
+    input:
+      name: "TESTSMITH"
+    expect:
+      count: ">= 1"
+      results[0].last_name: "TESTSMITH"
+
+  - name: Terminate the employee
+    action: terminate
+    input:
+      emp_id: "{{new_employee.emp_id}}"
+      termination_date: "2024-12-31"
+      reason: "VOLUNTARY"
+    expect:
+      employment_status: "TERMINATED"
+      termination_date: "2024-12-31"

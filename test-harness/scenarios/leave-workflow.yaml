@@ -1,0 +1,52 @@
+name: leave-workflow
+description: Leave request submission, approval, and cancellation
+module: leave
+legacy_package: PKG_LEAVE
+modern_endpoint: /api/leave
+
+steps:
+  - name: Submit a PTO request
+    action: submit
+    input:
+      emp_id: 34
+      leave_type_id: 1  # PTO
+      start_date: "2024-08-12"
+      end_date: "2024-08-16"
+      half_day_flag: "N"
+      reason: "Summer vacation"
+    expect:
+      status: "PENDING"
+      total_days: 5
+    save_as: leave_request
+
+  - name: Approve the leave request
+    action: approve
+    input:
+      request_id: "{{leave_request.request_id}}"
+      approver_emp_id: 31  # Manager
+    expect:
+      status: "APPROVED"
+
+  - name: Verify leave balance reduced
+    action: get_balance
+    input:
+      emp_id: 34
+      leave_type_id: 1
+    expect:
+      used: ">= 5"
+
+  - name: Cancel the approved request
+    action: cancel
+    input:
+      request_id: "{{leave_request.request_id}}"
+      reason: "Plans changed"
+    expect:
+      status: "CANCELLED"
+
+  - name: Verify leave balance restored
+    action: get_balance
+    input:
+      emp_id: 34
+      leave_type_id: 1
+    expect:
+      used_change: -5

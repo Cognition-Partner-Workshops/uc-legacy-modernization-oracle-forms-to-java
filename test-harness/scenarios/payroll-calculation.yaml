@@ -1,0 +1,52 @@
+name: payroll-calculation
+description: Payroll run creation, calculation, and approval
+module: payroll
+legacy_package: PKG_PAYROLL
+modern_endpoint: /api/payroll
+
+steps:
+  - name: Create a payroll run for current period
+    action: create_run
+    input:
+      period_id: 1
+      run_type: "REGULAR"
+    expect:
+      status: "PENDING"
+      run_type: "REGULAR"
+    save_as: payroll_run
+
+  - name: Calculate payroll
+    action: calculate
+    input:
+      run_id: "{{payroll_run.run_id}}"
+    expect:
+      status: "CALCULATED"
+      employee_count: "> 0"
+      total_gross: "> 0"
+      total_net: "> 0"
+    tolerance:
+      total_gross: 0.01
+      total_net: 0.01
+
+  - name: Verify individual employee pay
+    action: get_employee_pay
+    input:
+      run_id: "{{payroll_run.run_id}}"
+      emp_id: 34  # Jessica Nguyen, $82,000/year
+    expect:
+      base_pay: "> 0"
+      federal_tax: "> 0"
+      state_tax: "> 0"
+      fica: "> 0"
+      medicare: "> 0"
+      net_pay: "> 0"
+    tolerance:
+      base_pay: 0.01
+      net_pay: 0.01
+
+  - name: Approve the payroll run
+    action: approve
+    input:
+      run_id: "{{payroll_run.run_id}}"
+    expect:
+      status: "APPROVED"

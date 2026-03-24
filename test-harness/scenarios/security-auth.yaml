@@ -1,0 +1,49 @@
+name: security-auth
+description: Authentication and authorization checks
+module: security
+legacy_package: PKG_SECURITY
+modern_endpoint: /api/auth
+
+steps:
+  - name: Authenticate with valid credentials
+    action: login
+    input:
+      username: "james.richardson@company.com"
+      password: "test_password_123"
+    expect:
+      success: true
+      session_valid: true
+    save_as: auth_session
+
+  - name: Check admin permission
+    action: check_permission
+    input:
+      emp_id: 1
+      module: "PAYROLL"
+      action: "APPROVE"
+    expect:
+      has_permission: true
+
+  - name: Check non-admin permission
+    action: check_permission
+    input:
+      emp_id: 37  # Junior developer
+      module: "PAYROLL"
+      action: "APPROVE"
+    expect:
+      has_permission: false
+
+  - name: Authenticate with invalid credentials
+    action: login
+    input:
+      username: "james.richardson@company.com"
+      password: "wrong_password"
+    expect:
+      success: false
+
+  - name: Logout
+    action: logout
+    input:
+      session_id: "{{auth_session.session_id}}"
+    expect:
+      session_valid: false
