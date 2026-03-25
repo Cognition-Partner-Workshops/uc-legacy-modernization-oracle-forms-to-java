@@ -180,7 +180,7 @@ export class ConverterEngine {
     );
 
     // Print summary
-    const avgConfidence = results.reduce((s, r) => s + r.estimatedConversionConfidence, 0) / results.length;
+    const avgConfidence = results.length > 0 ? results.reduce((s, r) => s + r.estimatedConversionConfidence, 0) / results.length : 0;
     const totalEffort = results.reduce((s, r) => s + r.estimatedEffortMinutes, 0);
 
     console.log('\n' + '='.repeat(60));

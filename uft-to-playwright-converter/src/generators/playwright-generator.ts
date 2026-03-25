@@ -343,7 +343,7 @@ ${projects.join(',\n')}
   // ==================== String utilities ====================
 
   private escapeString(str: string): string {
-    return str.replace(/'/g, "\\'").replace(/\\/g, '\\\\');
+    return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   }
 
   private toPascalCase(str: string): string {

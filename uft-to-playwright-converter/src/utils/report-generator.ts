@@ -179,7 +179,7 @@ export class ReportGenerator {
    */
   static generateAnalysisReport(results: AnalysisResult[], outputPath: string): void {
     const totalScripts = results.length;
-    const avgConfidence = results.reduce((sum, r) => sum + r.estimatedConversionConfidence, 0) / totalScripts;
+    const avgConfidence = totalScripts > 0 ? results.reduce((sum, r) => sum + r.estimatedConversionConfidence, 0) / totalScripts : 0;
     const totalEffort = results.reduce((sum, r) => sum + r.estimatedEffortMinutes, 0);
     const complexityDist = { low: 0, medium: 0, high: 0, 'very-high': 0 };
 

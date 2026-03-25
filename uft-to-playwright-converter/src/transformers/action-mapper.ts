@@ -152,7 +152,7 @@ export class ActionMapper {
     // If it looks like text content
     if (action.objectName.includes(' ') || /^[A-Z]/.test(action.objectName)) {
       // Use role-based selector for buttons
-      if (['WebButton', 'WinButton', 'Link'].includes(action.objectType)) {
+      if (['WebButton', 'WinButton'].includes(action.objectType)) {
         return `page.getByRole('button', { name: '${action.objectName}' })`;
       }
       if (action.objectType === 'Link') {
@@ -403,12 +403,15 @@ export class ActionMapper {
 
       WebCheckBox: {
         Set: {
-          playwright: 'await page.locator({{SELECTOR}}).check()',
+          playwright: 'await page.locator({{SELECTOR}}).{{ARG0}}()',
           isAsync: true,
           imports: [],
           needsSelector: true,
           confidence: 90,
-          notes: 'If UFT arg is "OFF", change .check() to .uncheck().',
+          argTransform: (args: string[]): string[] => {
+            const val = (args[0] || '').replace(/"/g, '').trim().toUpperCase();
+            return [val === 'OFF' ? 'uncheck' : 'check'];
+          },
         },
         Click: {
           playwright: 'await page.locator({{SELECTOR}}).click()',

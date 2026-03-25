@@ -72,9 +72,9 @@ export class VBScriptParser {
       }
 
       // Variable declarations
-      const variable = this.parseVariable(fullLine, lineNum);
-      if (variable) {
-        script.variables.push(variable);
+      const variables = this.parseVariables(fullLine, lineNum);
+      if (variables.length > 0) {
+        script.variables.push(...variables);
         continue;
       }
 
@@ -131,59 +131,59 @@ export class VBScriptParser {
   }
 
   /**
-   * Parse a variable declaration (Dim, Set, Const)
+   * Parse variable declarations (Dim, Set, Const).
+   * Returns an array to handle Dim with multiple comma-separated variables.
    */
-  private parseVariable(line: string, lineNumber: number): UFTVariable | null {
+  private parseVariables(line: string, lineNumber: number): UFTVariable[] {
     // Dim varName, varName2
     const dimMatch = line.match(/^\s*Dim\s+(.+)/i);
     if (dimMatch) {
-      const names = dimMatch[1].split(',').map(n => n.trim());
-      // Return first variable; caller can handle multiple
-      return {
-        name: names[0],
-        type: 'Variant',
-        scope: 'local',
+      const names = dimMatch[1].split(',').map(n => n.trim()).filter(n => n.length > 0);
+      return names.map(name => ({
+        name,
+        type: 'Variant' as const,
+        scope: 'local' as const,
         lineNumber,
-      };
+      }));
     }
 
     // Set varName = ...
     const setMatch = line.match(/^\s*Set\s+(\w+)\s*=\s*(.+)/i);
     if (setMatch) {
-      return {
+      return [{
         name: setMatch[1],
         type: 'Object',
         scope: 'local',
         initialValue: setMatch[2].trim(),
         lineNumber,
-      };
+      }];
     }
 
     // Const NAME = value
     const constMatch = line.match(/^\s*Const\s+(\w+)\s*=\s*(.+)/i);
     if (constMatch) {
-      return {
+      return [{
         name: constMatch[1],
         type: 'Const',
         scope: 'global',
         initialValue: constMatch[2].trim(),
         lineNumber,
-      };
+      }];
     }
 
     // Simple assignment: varName = value (not Set, not comparison in If)
     const assignMatch = line.match(/^(\w+)\s*=\s*(.+)/i);
     if (assignMatch && !this.isControlFlow(line) && !this.isObjectCall(line)) {
-      return {
+      return [{
         name: assignMatch[1],
         type: 'Variant',
         scope: 'local',
         initialValue: assignMatch[2].trim(),
         lineNumber,
-      };
+      }];
     }
 
-    return null;
+    return [];
   }
 
   /**
