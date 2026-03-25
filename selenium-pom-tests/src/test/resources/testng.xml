@@ -1,0 +1,53 @@
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+<suite name="Selenium POM Test Suite" parallel="classes" thread-count="3" verbose="1">
+
+    <!-- Login Tests -->
+    <test name="Login Tests">
+        <classes>
+            <class name="com.automation.tests.LoginTest"/>
+        </classes>
+    </test>
+
+    <!-- Dropdown Tests -->
+    <test name="Dropdown Tests">
+        <classes>
+            <class name="com.automation.tests.DropdownTest"/>
+        </classes>
+    </test>
+
+    <!-- Form Tests (Checkboxes + Inputs) -->
+    <test name="Form Tests">
+        <classes>
+            <class name="com.automation.tests.FormTest"/>
+        </classes>
+    </test>
+
+    <!-- Table Tests -->
+    <test name="Table Tests">
+        <classes>
+            <class name="com.automation.tests.TableTest"/>
+        </classes>
+    </test>
+
+    <!-- Click Tests -->
+    <test name="Click Tests">
+        <classes>
+            <class name="com.automation.tests.ClickTest"/>
+        </classes>
+    </test>
+
+    <!-- Mouse Actions Tests (Hover, Context Menu, Drag & Drop) -->
+    <test name="Mouse Actions Tests">
+        <classes>
+            <class name="com.automation.tests.MouseActionsTest"/>
+        </classes>
+    </test>
+
+    <!-- Keyboard Actions Tests -->
+    <test name="Keyboard Actions Tests">
+        <classes>
+            <class name="com.automation.tests.KeyboardActionsTest"/>
+        </classes>
+    </test>
+
+</suite>
