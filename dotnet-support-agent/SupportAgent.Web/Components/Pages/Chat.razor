@@ -1,0 +1,148 @@
+@page "/chat"
+@rendermode InteractiveServer
+@inject SupportApiClient ApiClient
+
+<PageTitle>Chat - Support Agent</PageTitle>
+
+<div class="container-fluid h-100">
+    <div class="row justify-content-center">
+        <div class="col-lg-8 col-md-10">
+            <div class="card shadow-sm" style="height: calc(100vh - 120px);">
+                <div class="card-header bg-primary text-white d-flex align-items-center">
+                    <span class="bi bi-headset me-2 fs-4"></span>
+                    <div>
+                        <h5 class="mb-0">Aspire Support Agent</h5>
+                        <small class="opacity-75">AI-powered customer support</small>
+                    </div>
+                    <span class="badge bg-success ms-auto">Online</span>
+                </div>
+
+                <div class="card-body overflow-auto d-flex flex-column" id="chatMessages" style="flex: 1;">
+                    @if (_messages.Count == 0)
+                    {
+                        <div class="text-center text-muted my-auto">
+                            <span class="bi bi-chat-square-text display-1"></span>
+                            <p class="mt-3 fs-5">Welcome! How can I help you today?</p>
+                            <div class="d-flex flex-wrap justify-content-center gap-2 mt-3">
+                                <button class="btn btn-outline-primary btn-sm" @onclick='() => SendQuickMessage("I need help with my password")'>
+                                    Password Help
+                                </button>
+                                <button class="btn btn-outline-primary btn-sm" @onclick='() => SendQuickMessage("I have a billing question")'>
+                                    Billing Question
+                                </button>
+                                <button class="btn btn-outline-primary btn-sm" @onclick='() => SendQuickMessage("I want to check my ticket status")'>
+                                    Ticket Status
+                                </button>
+                                <button class="btn btn-outline-primary btn-sm" @onclick='() => SendQuickMessage("I have a technical issue")'>
+                                    Technical Issue
+                                </button>
+                            </div>
+                        </div>
+                    }
+
+                    @foreach (var msg in _messages)
+                    {
+                        <div class="mb-3 d-flex @(msg.IsUser ? "justify-content-end" : "justify-content-start")">
+                            <div class="@(msg.IsUser ? "bg-primary text-white" : "bg-light border") rounded-3 p-3" style="max-width: 75%; white-space: pre-wrap;">
+                                @if (!msg.IsUser)
+                                {
+                                    <div class="d-flex align-items-center mb-1">
+                                        <span class="bi bi-robot me-1 text-primary"></span>
+                                        <small class="fw-bold text-primary">Support Agent</small>
+                                    </div>
+                                }
+                                <div>@msg.Content</div>
+                                <div class="@(msg.IsUser ? "text-white-50" : "text-muted") mt-1" style="font-size: 0.7rem;">
+                                    @msg.Timestamp.ToString("HH:mm")
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    @if (_isLoading)
+                    {
+                        <div class="mb-3 d-flex justify-content-start">
+                            <div class="bg-light border rounded-3 p-3">
+                                <div class="d-flex align-items-center">
+                                    <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                                    <span class="text-muted">Agent is typing...</span>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="card-footer">
+                    @if (!string.IsNullOrEmpty(_errorMessage))
+                    {
+                        <div class="alert alert-warning alert-dismissible fade show py-2 mb-2" role="alert">
+                            <small>@_errorMessage</small>
+                            <button type="button" class="btn-close btn-close-sm" @onclick="() => _errorMessage = null"></button>
+                        </div>
+                    }
+                    <form @onsubmit="SendMessage" class="d-flex gap-2">
+                        <input type="text"
+                               class="form-control"
+                               placeholder="Type your message..."
+                               @bind="_currentMessage"
+                               @bind:event="oninput"
+                               disabled="@_isLoading" />
+                        <button type="submit"
+                                class="btn btn-primary px-4"
+                                disabled="@(_isLoading || string.IsNullOrWhiteSpace(_currentMessage))">
+                            <span class="bi bi-send-fill"></span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private readonly List<ChatMessage> _messages = [];
+    private string _currentMessage = string.Empty;
+    private string _sessionId = Guid.NewGuid().ToString("N");
+    private bool _isLoading;
+    private string? _errorMessage;
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(_currentMessage) || _isLoading)
+            return;
+
+        var userMessage = _currentMessage.Trim();
+        _currentMessage = string.Empty;
+        _errorMessage = null;
+
+        _messages.Add(new ChatMessage(true, userMessage, DateTime.Now));
+        _isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var response = await ApiClient.SendMessageAsync(_sessionId, userMessage);
+            if (response is not null)
+            {
+                _messages.Add(new ChatMessage(false, response.Message, DateTime.Now));
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to get response: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SendQuickMessage(string message)
+    {
+        _currentMessage = message;
+        await SendMessage();
+    }
+
+    private record ChatMessage(bool IsUser, string Content, DateTime Timestamp);
+}

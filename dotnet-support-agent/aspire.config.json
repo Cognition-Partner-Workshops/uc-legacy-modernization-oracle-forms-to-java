@@ -1,0 +1,5 @@
+{
+  "appHost": {
+    "path": "SupportAgent.AppHost/SupportAgent.AppHost.csproj"
+  }
+}
