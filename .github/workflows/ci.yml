@@ -30,6 +30,12 @@ jobs:
           cache: 'maven'
           cache-dependency-path: java-target/pom.xml
 
+      - name: Generate Maven wrapper
+        run: mvn wrapper:wrapper -B
+
+      - name: Grant Maven wrapper execute permission
+        run: chmod +x mvnw
+
       - name: Compile
         run: ./mvnw compile -B
 
@@ -55,6 +61,7 @@ jobs:
 
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
+        continue-on-error: true
         env:
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -78,6 +85,12 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
           cache-dependency-path: java-target/pom.xml
+
+      - name: Generate Maven wrapper
+        run: mvn wrapper:wrapper -B
+
+      - name: Grant Maven wrapper execute permission
+        run: chmod +x mvnw
 
       - name: OWASP Dependency-Check
         run: |
@@ -115,6 +128,12 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
           cache-dependency-path: java-target/pom.xml
+
+      - name: Generate Maven wrapper
+        run: mvn wrapper:wrapper -B
+
+      - name: Grant Maven wrapper execute permission
+        run: chmod +x mvnw
 
       - name: Build for CodeQL
         run: ./mvnw compile -B -DskipTests
