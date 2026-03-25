@@ -96,7 +96,7 @@ public class SupportAgentService
             var chatHistory = new ChatHistory();
             chatHistory.AddSystemMessage(AgentInstructions);
 
-            // Add previous messages for context
+            // Add previous messages for context (current user message is already in session history)
             var sessionHistory = GetHistory(sessionId);
             foreach (var entry in sessionHistory.TakeLast(10))
             {
@@ -105,8 +105,6 @@ public class SupportAgentService
                 else if (entry.Role == "assistant")
                     chatHistory.AddAssistantMessage(entry.Message);
             }
-
-            chatHistory.AddUserMessage(userMessage);
 
             var responses = new List<string>();
             await foreach (var content in agent.InvokeAsync(chatHistory))
