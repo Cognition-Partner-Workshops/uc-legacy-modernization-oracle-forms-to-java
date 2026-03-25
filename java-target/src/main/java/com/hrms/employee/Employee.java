@@ -110,6 +110,75 @@ public class Employee {
         modifiedDate = LocalDateTime.now();
     }
 
-    // Getters and setters omitted for brevity
-    // In production: use Lombok @Data or Java records for DTOs
+    // --- Getters and Setters ---
+
+    public Long getEmpId() { return empId; }
+    public void setEmpId(Long empId) { this.empId = empId; }
+
+    public String getEmpNumber() { return empNumber; }
+    public void setEmpNumber(String empNumber) { this.empNumber = empNumber; }
+
+    public String getFirstName() { return firstName; }
+    public void setFirstName(String firstName) { this.firstName = firstName; }
+
+    public String getLastName() { return lastName; }
+    public void setLastName(String lastName) { this.lastName = lastName; }
+
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+
+    public String getPhoneWork() { return phoneWork; }
+    public void setPhoneWork(String phoneWork) { this.phoneWork = phoneWork; }
+
+    public String getPhoneMobile() { return phoneMobile; }
+    public void setPhoneMobile(String phoneMobile) { this.phoneMobile = phoneMobile; }
+
+    public LocalDate getHireDate() { return hireDate; }
+    public void setHireDate(LocalDate hireDate) { this.hireDate = hireDate; }
+
+    public LocalDate getTerminationDate() { return terminationDate; }
+    public void setTerminationDate(LocalDate terminationDate) { this.terminationDate = terminationDate; }
+
+    public String getTerminationReason() { return terminationReason; }
+    public void setTerminationReason(String terminationReason) { this.terminationReason = terminationReason; }
+
+    public Long getDeptId() { return deptId; }
+    public void setDeptId(Long deptId) { this.deptId = deptId; }
+
+    public Long getJobId() { return jobId; }
+    public void setJobId(Long jobId) { this.jobId = jobId; }
+
+    public Long getManagerEmpId() { return managerEmpId; }
+    public void setManagerEmpId(Long managerEmpId) { this.managerEmpId = managerEmpId; }
+
+    public String getLocationCode() { return locationCode; }
+    public void setLocationCode(String locationCode) { this.locationCode = locationCode; }
+
+    public String getEmploymentType() { return employmentType; }
+    public void setEmploymentType(String employmentType) { this.employmentType = employmentType; }
+
+    public String getEmploymentStatus() { return employmentStatus; }
+    public void setEmploymentStatus(String employmentStatus) { this.employmentStatus = employmentStatus; }
+
+    public String getGender() { return gender; }
+    public void setGender(String gender) { this.gender = gender; }
+
+    public LocalDate getDateOfBirth() { return dateOfBirth; }
+    public void setDateOfBirth(LocalDate dateOfBirth) { this.dateOfBirth = dateOfBirth; }
+
+    public String getMaritalStatus() { return maritalStatus; }
+    public void setMaritalStatus(String maritalStatus) { this.maritalStatus = maritalStatus; }
+
+    public String getActiveFlag() { return activeFlag; }
+    public void setActiveFlag(String activeFlag) { this.activeFlag = activeFlag; }
+
+    public String getCreatedBy() { return createdBy; }
+    public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
+
+    public LocalDateTime getCreatedDate() { return createdDate; }
+
+    public String getModifiedBy() { return modifiedBy; }
+    public void setModifiedBy(String modifiedBy) { this.modifiedBy = modifiedBy; }
+
+    public LocalDateTime getModifiedDate() { return modifiedDate; }
 }
