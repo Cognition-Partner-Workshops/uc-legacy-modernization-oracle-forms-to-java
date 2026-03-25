@@ -1,0 +1,67 @@
+# Custom Mapping Overrides - Example
+#
+# Use this file to provide project-specific mappings from UFT objects
+# to Playwright selectors. This is useful when:
+# - Your app uses custom data-testid attributes
+# - The Object Repository is unavailable
+# - You want to override auto-generated selectors
+#
+# Format:
+# overrides:
+#   - uftObjectType: <UFT object class>
+#     uftObjectName: <logical name in UFT>
+#     playwrightSelector: <Playwright selector string>
+#     selectorType: css | xpath | text | role | testId | label | placeholder
+#     notes: <optional notes>
+
+overrides:
+  # Login Page
+  - uftObjectType: WebEdit
+    uftObjectName: txt_username
+    playwrightSelector: "#username"
+    selectorType: css
+    notes: Login page username field
+
+  - uftObjectType: WebEdit
+    uftObjectName: txt_password
+    playwrightSelector: "#password"
+    selectorType: css
+    notes: Login page password field
+
+  - uftObjectType: WebButton
+    uftObjectName: btn_login
+    playwrightSelector: "button[type='submit']"
+    selectorType: css
+    notes: Login submit button
+
+  # Employee Form
+  - uftObjectType: WebEdit
+    uftObjectName: txtFirstName
+    playwrightSelector: "[data-testid='employee-first-name']"
+    selectorType: testId
+
+  - uftObjectType: WebEdit
+    uftObjectName: txtLastName
+    playwrightSelector: "[data-testid='employee-last-name']"
+    selectorType: testId
+
+  - uftObjectType: WebList
+    uftObjectName: ddlDepartment
+    playwrightSelector: "[data-testid='department-select']"
+    selectorType: testId
+
+  - uftObjectType: WebButton
+    uftObjectName: btnSave
+    playwrightSelector: "button:has-text('Save')"
+    selectorType: text
+
+  # Navigation
+  - uftObjectType: Link
+    uftObjectName: lnkEmployees
+    playwrightSelector: "nav >> text=Employees"
+    selectorType: text
+
+  - uftObjectType: Link
+    uftObjectName: lnkPayroll
+    playwrightSelector: "nav >> text=Payroll"
+    selectorType: text

@@ -1,0 +1,44 @@
+# UFT to Playwright Converter - Default Configuration
+# Copy this file and customize for your project.
+
+# Input/Output
+inputDir: ./uft-scripts          # Directory containing UFT .vbs/.qfl/.mts files
+outputDir: ./playwright-output   # Directory for generated Playwright tests
+
+# Language & Framework
+language: typescript              # typescript | javascript
+testRunner: playwright-test       # playwright-test | jest | mocha
+
+# Generation Options
+generatePageObjects: true         # Generate Page Object Model classes
+generateFixtures: true            # Generate Playwright fixtures for test data
+preserveComments: true            # Include original UFT lines as comments in output
+
+# Application Under Test
+baseUrl: http://localhost:3000    # Base URL for the application
+browsers:                         # Browsers to test against
+  - chromium
+  - firefox
+  # - webkit                     # Uncomment for Safari testing
+
+# Test Execution
+parallel: false                   # Run tests in parallel
+retries: 2                        # Retry count for flaky tests
+timeout: 30000                    # Action timeout in milliseconds
+
+# Failure Handling
+screenshotOnFailure: true         # Capture screenshots on test failure
+videoOnFailure: false             # Record video on test failure
+traceOnFailure: true              # Capture Playwright trace on failure
+
+# Object Repository (optional)
+# objectRepositoryPath: ./object-repository   # Path to OR export files (.tsr, .xml)
+
+# External Test Data (optional)
+# dataTablePath: ./test-data                  # Path to DataTable export files
+
+# Custom Mapping Overrides (optional)
+# mappingOverridesPath: ./config/mapping-overrides.yaml
+
+# Report Format
+reportFormat: html                # html | json | junit | list
