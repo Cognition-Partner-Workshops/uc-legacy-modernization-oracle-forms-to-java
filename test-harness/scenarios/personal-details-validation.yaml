@@ -1,0 +1,32 @@
+name: personal-details-validation
+description: Validate personal details form fields
+module: employee
+modern_endpoint: /api/personal-details
+
+steps:
+  - name: Submit valid personal details
+    action: create
+    input:
+      first_name: "John"
+      last_name: "Doe"
+      aadhaar_id: "123456789012"
+    expect:
+      status: 200
+
+  - name: Submit with first name exceeding 20 chars
+    action: create
+    input:
+      first_name: "ABCDEFGHIJKLMNOPQRSTU"
+      last_name: "Doe"
+      aadhaar_id: "123456789012"
+    expect:
+      status: 400
+
+  - name: Submit with invalid Aadhaar
+    action: create
+    input:
+      first_name: "John"
+      last_name: "Doe"
+      aadhaar_id: "12345"
+    expect:
+      status: 400

@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personal Details</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 500px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        .form-group {
+            margin-bottom: 16px;
+        }
+        label {
+            display: block;
+            margin-bottom: 4px;
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #4a90d9;
+        }
+        input[type="text"].error {
+            border-color: #d9534f;
+        }
+        .error-message {
+            color: #d9534f;
+            font-size: 12px;
+            margin-top: 4px;
+            min-height: 16px;
+        }
+        button[type="submit"] {
+            background-color: #4a90d9;
+            color: white;
+            padding: 10px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button[type="submit"]:hover {
+            background-color: #357abd;
+        }
+        #response-message {
+            margin-top: 20px;
+            padding: 12px;
+            border-radius: 4px;
+            display: none;
+        }
+        #response-message.success {
+            background-color: #dff0d8;
+            color: #3c763d;
+            border: 1px solid #d6e9c6;
+            display: block;
+        }
+        #response-message.error {
+            background-color: #f2dede;
+            color: #a94442;
+            border: 1px solid #ebccd1;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <h1>Personal Details</h1>
+    <form id="personal-details-form" novalidate>
+        <div class="form-group">
+            <label for="firstName">First Name</label>
+            <input type="text" id="firstName" name="firstName" maxlength="20" required
+                   pattern="^[a-zA-Z]+$" placeholder="Enter first name">
+            <div class="error-message" id="firstName-error"></div>
+        </div>
+
+        <div class="form-group">
+            <label for="lastName">Last Name</label>
+            <input type="text" id="lastName" name="lastName" maxlength="10" required
+                   pattern="^[a-zA-Z]+$" placeholder="Enter last name">
+            <div class="error-message" id="lastName-error"></div>
+        </div>
+
+        <div class="form-group">
+            <label for="aadhaarId">Aadhaar ID</label>
+            <input type="text" id="aadhaarId" name="aadhaarId" maxlength="12" minlength="12" required
+                   pattern="^[0-9]{12}$" placeholder="Enter 12-digit Aadhaar ID">
+            <div class="error-message" id="aadhaarId-error"></div>
+        </div>
+
+        <button type="submit">Submit</button>
+    </form>
+
+    <div id="response-message"></div>
+
+    <script>
+        const form = document.getElementById('personal-details-form');
+        const responseMessage = document.getElementById('response-message');
+
+        const validationRules = {
+            firstName: {
+                required: true,
+                requiredMessage: 'First name is required',
+                maxLength: 20,
+                maxLengthMessage: 'First name must not exceed 20 characters',
+                pattern: /^[a-zA-Z]+$/,
+                patternMessage: 'First name must contain only alphabetic characters'
+            },
+            lastName: {
+                required: true,
+                requiredMessage: 'Last name is required',
+                maxLength: 10,
+                maxLengthMessage: 'Last name must not exceed 10 characters',
+                pattern: /^[a-zA-Z]+$/,
+                patternMessage: 'Last name must contain only alphabetic characters'
+            },
+            aadhaarId: {
+                required: true,
+                requiredMessage: 'Aadhaar ID is required',
+                exactLength: 12,
+                exactLengthMessage: 'Aadhaar ID must be exactly 12 characters',
+                pattern: /^[0-9]{12}$/,
+                patternMessage: 'Aadhaar ID must contain exactly 12 numeric digits'
+            }
+        };
+
+        function validateField(fieldName) {
+            const input = document.getElementById(fieldName);
+            const errorDiv = document.getElementById(fieldName + '-error');
+            const rules = validationRules[fieldName];
+            const value = input.value.trim();
+
+            input.classList.remove('error');
+            errorDiv.textContent = '';
+
+            if (rules.required && value === '') {
+                input.classList.add('error');
+                errorDiv.textContent = rules.requiredMessage;
+                return false;
+            }
+
+            if (value !== '' && rules.maxLength && value.length > rules.maxLength) {
+                input.classList.add('error');
+                errorDiv.textContent = rules.maxLengthMessage;
+                return false;
+            }
+
+            if (value !== '' && rules.exactLength && value.length !== rules.exactLength) {
+                input.classList.add('error');
+                errorDiv.textContent = rules.exactLengthMessage;
+                return false;
+            }
+
+            if (value !== '' && rules.pattern && !rules.pattern.test(value)) {
+                input.classList.add('error');
+                errorDiv.textContent = rules.patternMessage;
+                return false;
+            }
+
+            return true;
+        }
+
+        // Validate on blur
+        Object.keys(validationRules).forEach(function(fieldName) {
+            document.getElementById(fieldName).addEventListener('blur', function() {
+                validateField(fieldName);
+            });
+        });
+
+        // Validate on submit
+        form.addEventListener('submit', function(event) {
+            event.preventDefault();
+            responseMessage.className = '';
+            responseMessage.style.display = 'none';
+            responseMessage.textContent = '';
+
+            let isValid = true;
+            Object.keys(validationRules).forEach(function(fieldName) {
+                if (!validateField(fieldName)) {
+                    isValid = false;
+                }
+            });
+
+            if (!isValid) {
+                return;
+            }
+
+            const payload = {
+                firstName: document.getElementById('firstName').value.trim(),
+                lastName: document.getElementById('lastName').value.trim(),
+                aadhaarId: document.getElementById('aadhaarId').value.trim()
+            };
+
+            fetch('/api/personal-details', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(function(response) {
+                if (response.ok) {
+                    return response.json().then(function(data) {
+                        responseMessage.className = 'success';
+                        responseMessage.style.display = 'block';
+                        responseMessage.textContent = data.message;
+                    });
+                } else {
+                    return response.json().then(function(data) {
+                        responseMessage.className = 'error';
+                        responseMessage.style.display = 'block';
+                        if (data.errors) {
+                            responseMessage.textContent = data.errors.join(', ');
+                        } else if (data.message) {
+                            responseMessage.textContent = data.message;
+                        } else {
+                            responseMessage.textContent = 'Validation failed. Please check your input.';
+                        }
+                    });
+                }
+            })
+            .catch(function(error) {
+                responseMessage.className = 'error';
+                responseMessage.style.display = 'block';
+                responseMessage.textContent = 'An error occurred. Please try again.';
+            });
+        });
+    </script>
+</body>
+</html>
