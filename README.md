@@ -16,6 +16,8 @@ See: [ts-plsql-oracle-forms-legacy-codebase](https://github.com/Cognition-Partne
 ## Repository Structure
 
 ```
+├── MIGRATION_NOTES.md                # Documents translation decisions, bug fixes, and what's not yet migrated
+│
 ├── migration-plan/
 │   ├── assessment-report.md          # Legacy system assessment findings
 │   ├── migration-strategy.md         # Chosen strategy and rationale
@@ -30,11 +32,11 @@ See: [ts-plsql-oracle-forms-legacy-codebase](https://github.com/Cognition-Partne
 │   │   ├── main/
 │   │   │   ├── java/com/hrms/
 │   │   │   │   ├── HrmsApplication.java
-│   │   │   │   ├── employee/         # Employee module (migrated from PKG_EMPLOYEE + HRMS_EMPLOYEE form)
-│   │   │   │   ├── payroll/          # Payroll module (migrated from PKG_PAYROLL + HRMS_PAYROLL form)
-│   │   │   │   ├── leave/            # Leave module (migrated from PKG_LEAVE + HRMS_LEAVE form)
-│   │   │   │   ├── security/         # Auth module (migrated from PKG_SECURITY + HRMS_LOGIN form)
-│   │   │   │   └── common/           # Shared utilities (migrated from PKG_COMMON)
+│   │   │   │   ├── employee/         # ✅ Employee module — MIGRATED (see below)
+│   │   │   │   ├── payroll/          # Payroll module (stub — pending migration)
+│   │   │   │   ├── leave/            # Leave module (stub — pending migration)
+│   │   │   │   ├── security/         # Auth module (stub — pending migration)
+│   │   │   │   └── common/           # Shared utilities (stub — pending migration)
 │   │   │   └── resources/
 │   │   │       ├── application.yml
 │   │   │       └── db/migration/     # Flyway migrations
@@ -57,6 +59,43 @@ See: [ts-plsql-oracle-forms-legacy-codebase](https://github.com/Cognition-Partne
     ├── api-design.md                 # REST API design for migrated system
     └── data-migration.md             # Database migration approach
 ```
+
+## Employee Module (Migrated)
+
+The employee module has been migrated from `PKG_EMPLOYEE` (967 lines of PL/SQL) + `HRMS_EMPLOYEE` Oracle Form + `HRMS_VALIDATION_LIB` PLL to Spring Boot. See [`MIGRATION_NOTES.md`](MIGRATION_NOTES.md) for full details.
+
+### Components
+
+| Java Component | Replaces | Purpose |
+|---|---|---|
+| `EmployeeServiceImpl` | PKG_EMPLOYEE body | Full CRUD, search, terminate, transfer, org chart |
+| `EmployeeController` | HRMS_EMPLOYEE form | REST API with 8 endpoints |
+| `EmployeeRepository` | Direct SQL in PKG_EMPLOYEE | Spring Data JPA with Specifications |
+| `EmployeeSpecifications` | Dynamic SQL in search_employees | Type-safe JPA Criteria queries |
+| `Employee` | EMPLOYEES table + Forms data block | JPA entity with validation |
+| `EmployeeServiceImplTest` | — | 11 unit tests validating parity with legacy |
+
+### REST API
+
+| Method | Endpoint | Legacy Equivalent |
+|---|---|---|
+| `POST` | `/api/employees` | `PKG_EMPLOYEE.create_employee` |
+| `PUT` | `/api/employees/{id}` | `PKG_EMPLOYEE.update_employee` |
+| `GET` | `/api/employees/{id}` | `PKG_EMPLOYEE.get_employee` |
+| `GET` | `/api/employees?name=&deptId=&...` | `PKG_EMPLOYEE.search_employees` |
+| `POST` | `/api/employees/{id}/terminate` | `PKG_EMPLOYEE.terminate_employee` |
+| `POST` | `/api/employees/{id}/transfer` | `PKG_EMPLOYEE.transfer_employee` |
+| `GET` | `/api/employees/{id}/org-chart` | `PKG_EMPLOYEE.get_org_chart` |
+| `GET` | `/api/employees/{id}/direct-reports` | `PKG_EMPLOYEE.get_direct_reports` |
+
+### Bugs Fixed During Migration
+
+| Issue | Severity | Legacy Location | Fix |
+|---|---|---|---|
+| SQL injection in search | Critical | PKG_EMPLOYEE.pkb line 442-499 | JPA Specifications (parameterized queries) |
+| Race condition in emp number generation | High | PKG_EMPLOYEE.pkb line 37-55 | Sequence-derived emp number from DB-assigned ID |
+| Circular dependency with PKG_PAYROLL | Medium | PKG_EMPLOYEE ↔ PKG_PAYROLL | Decoupled via service design (Spring Events) |
+| Client/server validation drift | Medium | HRMS_VALIDATION_LIB vs PKG_VALIDATION | Unified Jakarta Bean Validation annotations |
 
 ## Migration Approach
 
