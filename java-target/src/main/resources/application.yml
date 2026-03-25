@@ -33,7 +33,7 @@ spring:
 
 # Security
 jwt:
-  secret: ${JWT_SECRET:change-me-in-production}
+  secret: ${JWT_SECRET:hrms-default-secret-key-change-me-in-production-env}
   expiration-ms: 1800000  # 30 minutes (matches legacy SESSION_TIMEOUT_MIN)
 
 # API Documentation
