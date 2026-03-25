@@ -131,11 +131,11 @@ export class LeavePage {
    * Replaces: UFT HRMS_LEAVE form cancel action
    */
   async cancelRequest(reason: string) {
-    await this.cancelRequestButton.click();
-    // Handle confirmation dialog
-    this.page.on('dialog', async (dialog) => {
-      await dialog.accept();
+    // Handle confirmation dialog — must register BEFORE the click that triggers it
+    this.page.once('dialog', async (dialog) => {
+      await dialog.accept(reason);
     });
+    await this.cancelRequestButton.click();
   }
 
   /** Get leave balance for a specific type */
