@@ -1,0 +1,232 @@
+name: google-login
+description: Test cases for Google.com login flow - positive, negative, and edge-case scenarios
+module: authentication
+target_url: https://accounts.google.com
+
+steps:
+  # -----------------------------------------------------------
+  # TC-01: Verify Google Homepage Loads
+  # -----------------------------------------------------------
+  - name: Verify Google homepage loads
+    action: navigate
+    input:
+      url: "https://www.google.com"
+    expect:
+      page_title_contains: "Google"
+      http_status: 200
+
+  # -----------------------------------------------------------
+  # TC-02: Verify Sign-In button is present on homepage
+  # -----------------------------------------------------------
+  - name: Verify Sign-In button is present
+    action: check_element
+    input:
+      url: "https://www.google.com"
+      element: "link_text:Sign in"
+    expect:
+      element_visible: true
+      element_clickable: true
+
+  # -----------------------------------------------------------
+  # TC-03: Sign-In button navigates to accounts page
+  # -----------------------------------------------------------
+  - name: Sign-In navigates to Google Accounts
+    action: click_and_verify
+    input:
+      url: "https://www.google.com"
+      click_element: "link_text:Sign in"
+    expect:
+      url_contains: "accounts.google.com"
+
+  # -----------------------------------------------------------
+  # TC-04: Email input field is present on login page
+  # -----------------------------------------------------------
+  - name: Email input field is present
+    action: check_element
+    input:
+      url: "https://accounts.google.com"
+      element: "id:identifierId"
+    expect:
+      element_visible: true
+      element_enabled: true
+
+  # -----------------------------------------------------------
+  # TC-05: Empty email shows validation error
+  # -----------------------------------------------------------
+  - name: Empty email shows error
+    action: login_email_step
+    input:
+      email: ""
+    expect:
+      error_message_contains: "Enter an email or phone number"
+
+  # -----------------------------------------------------------
+  # TC-06: Invalid email format shows error
+  # -----------------------------------------------------------
+  - name: Invalid email format shows error
+    action: login_email_step
+    input:
+      email: "invalid-email-format"
+    expect:
+      error_message_contains: "Couldn't find your Google Account"
+
+  # -----------------------------------------------------------
+  # TC-07: Non-existent email shows error
+  # -----------------------------------------------------------
+  - name: Non-existent email shows error
+    action: login_email_step
+    input:
+      email: "nonexistent.user.xyz123456789@gmail.com"
+    expect:
+      error_message_contains: "Couldn't find your Google Account"
+
+  # -----------------------------------------------------------
+  # TC-08: Valid email proceeds to password step
+  # -----------------------------------------------------------
+  - name: Valid email proceeds to password step
+    action: login_email_step
+    input:
+      email: "{{GOOGLE_TEST_EMAIL}}"
+    expect:
+      password_field_visible: true
+
+  # -----------------------------------------------------------
+  # TC-09: Empty password shows validation error
+  # -----------------------------------------------------------
+  - name: Empty password shows error
+    action: login_password_step
+    input:
+      email: "{{GOOGLE_TEST_EMAIL}}"
+      password: ""
+    expect:
+      error_message_contains: "Enter a password"
+
+  # -----------------------------------------------------------
+  # TC-10: Wrong password shows error
+  # -----------------------------------------------------------
+  - name: Wrong password shows error
+    action: login_password_step
+    input:
+      email: "{{GOOGLE_TEST_EMAIL}}"
+      password: "DefinitelyWr0ng!P@ssword"
+    expect:
+      error_message_contains: "Wrong password"
+
+  # -----------------------------------------------------------
+  # TC-11: Successful login with valid credentials
+  # -----------------------------------------------------------
+  - name: Successful login with valid credentials
+    action: login_full
+    input:
+      email: "{{GOOGLE_TEST_EMAIL}}"
+      password: "{{GOOGLE_TEST_PASSWORD}}"
+    expect:
+      login_success: true
+      url_contains: "myaccount.google.com"
+
+  # -----------------------------------------------------------
+  # TC-12: Forgot password link is present
+  # -----------------------------------------------------------
+  - name: Forgot password link is present
+    action: check_element
+    input:
+      navigate_to_password_step: true
+      email: "{{GOOGLE_TEST_EMAIL}}"
+      element: "text:Forgot password"
+    expect:
+      element_visible: true
+      element_clickable: true
+
+  # -----------------------------------------------------------
+  # TC-13: Create account link is present
+  # -----------------------------------------------------------
+  - name: Create account link is present
+    action: check_element
+    input:
+      url: "https://accounts.google.com"
+      element: "text:Create account"
+    expect:
+      element_visible: true
+      element_clickable: true
+
+  # -----------------------------------------------------------
+  # TC-14: Password field masks input
+  # -----------------------------------------------------------
+  - name: Password field masks input
+    action: check_element_attribute
+    input:
+      navigate_to_password_step: true
+      email: "{{GOOGLE_TEST_EMAIL}}"
+      element: "name:Passwd"
+      attribute: "type"
+    expect:
+      attribute_value: "password"
+
+  # -----------------------------------------------------------
+  # TC-15: Show password toggle works
+  # -----------------------------------------------------------
+  - name: Show password toggle reveals text
+    action: toggle_and_verify
+    input:
+      navigate_to_password_step: true
+      email: "{{GOOGLE_TEST_EMAIL}}"
+      toggle_element: "xpath://input[@type='checkbox' and @aria-label='Show password']"
+      target_element: "name:Passwd"
+      target_attribute: "type"
+    expect:
+      attribute_value_after_toggle: "text"
+
+  # -----------------------------------------------------------
+  # TC-16: Login page title is correct
+  # -----------------------------------------------------------
+  - name: Login page title is correct
+    action: navigate
+    input:
+      url: "https://accounts.google.com"
+    expect:
+      page_title_contains: "Sign in"
+
+  # -----------------------------------------------------------
+  # TC-17: SQL injection in email field handled safely
+  # -----------------------------------------------------------
+  - name: SQL injection in email is handled gracefully
+    action: login_email_step
+    input:
+      email: "' OR '1'='1' --"
+    expect:
+      error_message_contains: "Couldn't find your Google Account"
+      no_server_error: true
+
+  # -----------------------------------------------------------
+  # TC-18: XSS payload in email field handled safely
+  # -----------------------------------------------------------
+  - name: XSS in email is handled gracefully
+    action: login_email_step
+    input:
+      email: "<script>alert('XSS')</script>"
+    expect:
+      error_message_contains: "Couldn't find your Google Account"
+      no_script_execution: true
+
+  # -----------------------------------------------------------
+  # TC-19: Login page uses HTTPS
+  # -----------------------------------------------------------
+  - name: Login page uses HTTPS
+    action: navigate
+    input:
+      url: "https://accounts.google.com"
+    expect:
+      url_starts_with: "https://"
+
+  # -----------------------------------------------------------
+  # TC-20: Login page is responsive on mobile viewport
+  # -----------------------------------------------------------
+  - name: Login page responsive on mobile
+    action: check_responsive
+    input:
+      url: "https://accounts.google.com"
+      viewport_width: 375
+      viewport_height: 812
+    expect:
+      element_visible: "id:identifierId"
+      no_horizontal_scroll: true
