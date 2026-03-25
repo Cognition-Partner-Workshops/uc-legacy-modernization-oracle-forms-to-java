@@ -28,7 +28,7 @@ export async function apiLogin(
   password: string
 ): Promise<AuthToken> {
   const response = await request.post(`${API_BASE}/auth/login`, {
-    data: { username, password },
+    data: { email: username, password },
   });
   return response.json();
 }

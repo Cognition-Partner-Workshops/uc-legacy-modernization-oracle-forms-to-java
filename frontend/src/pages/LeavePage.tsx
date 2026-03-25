@@ -106,12 +106,10 @@ export default function LeavePage() {
     }
   };
 
-  const handleApprove = async (index: number) => {
+  const handleApprove = async (id: number) => {
     clearMessages();
-    const req = requests[index];
-    if (!req) return;
     try {
-      await api.approveLeave(req.id);
+      await api.approveLeave(id);
       setSuccess('Leave request approved');
       fetchRequests();
     } catch (err: any) {
@@ -299,7 +297,7 @@ export default function LeavePage() {
                     <td><span className="badge badge-pending">{r.status}</span></td>
                     <td>
                       <button className="btn btn-success" style={{ marginRight: '0.5rem' }}
-                        onClick={() => handleApprove(idx)}>
+                        onClick={() => handleApprove(r.id)}>
                         Approve
                       </button>
                       <button className="btn btn-danger">Reject</button>
