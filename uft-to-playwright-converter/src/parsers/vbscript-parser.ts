@@ -285,26 +285,28 @@ export class VBScriptParser {
     const lastPart = chainParts[chainParts.length - 1];
     const parentParts = chainParts.slice(0, -1);
 
-    // Extract method and arguments from the last element
-    const methodMatch = lastPart.match(/\.(\w+)(?:\s+(.*))?$/);
-    let objectType = '';
-    let objectName = '';
-    let method = '';
-    let args: string[] = [];
+    // Extract the object type and name from the last chain element
+    const objMatch = lastPart.match(/^(\w+)\s*\(\s*"([^"]*)"\s*\)/);
+    const objectType = objMatch ? objMatch[1] : lastPart.split('.')[0];
+    const objectName = objMatch ? objMatch[2] : '';
 
-    if (methodMatch) {
-      // The last part has a method call
-      const objMatch = lastPart.match(/^(\w+)\s*\(\s*"([^"]*)"\s*\)/);
-      objectType = objMatch ? objMatch[1] : lastPart.split('.')[0];
-      objectName = objMatch ? objMatch[2] : '';
-      method = methodMatch[1];
-      args = methodMatch[2] ? this.parseArguments(methodMatch[2]) : [];
+    // Extract method and arguments from the last element
+    // Handles both parenthesized args: .Exist(10), .GetCellData(1, 2)
+    // and space-separated args: .Set "value"
+    const methodWithParenMatch = lastPart.match(/\.(\w+)\(([^)]*)\)/);
+    const methodWithSpaceMatch = lastPart.match(/\.(\w+)(?:\s+(.*))?$/);
+    let method: string;
+    let args: string[];
+
+    if (methodWithParenMatch) {
+      method = methodWithParenMatch[1];
+      args = methodWithParenMatch[2] ? this.parseArguments(methodWithParenMatch[2]) : [];
+    } else if (methodWithSpaceMatch) {
+      method = methodWithSpaceMatch[1];
+      args = methodWithSpaceMatch[2] ? this.parseArguments(methodWithSpaceMatch[2]) : [];
     } else {
-      // The whole thing is just an object reference (rare)
-      const objMatch = lastPart.match(/^(\w+)\s*\(\s*"([^"]*)"\s*\)/);
-      objectType = objMatch ? objMatch[1] : lastPart;
-      objectName = objMatch ? objMatch[2] : '';
-      method = 'Click'; // Default
+      method = 'Click'; // Default for bare object references
+      args = [];
     }
 
     return {

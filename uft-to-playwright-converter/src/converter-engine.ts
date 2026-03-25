@@ -131,6 +131,25 @@ export class ConverterEngine {
       configContent
     );
 
+    // Generate tsconfig.json for the output project
+    writeFileContent(
+      path.join(this.config.outputDir, 'tsconfig.json'),
+      JSON.stringify({
+        compilerOptions: {
+          target: 'ES2020',
+          module: 'commonjs',
+          moduleResolution: 'node',
+          strict: true,
+          esModuleInterop: true,
+          skipLibCheck: true,
+          outDir: './dist',
+          rootDir: '.',
+          types: ['node'],
+        },
+        include: ['tests/**/*.ts', 'playwright.config.ts'],
+      }, null, 2) + '\n'
+    );
+
     // Step 6: Generate package.json for the output project
     this.generateOutputPackageJson();
 
@@ -367,6 +386,8 @@ export class ConverterEngine {
       },
       devDependencies: {
         '@playwright/test': '^1.40.0',
+        '@types/node': '^20.0.0',
+        'typescript': '^5.3.0',
       },
     };
 

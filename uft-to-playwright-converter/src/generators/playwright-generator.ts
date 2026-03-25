@@ -65,7 +65,13 @@ export class PlaywrightGenerator {
    * Generate import statements.
    */
   private generateImports(testFile: PlaywrightTestFile): string {
-    const imports = new Set(testFile.imports);
+    const imports = new Set<string>();
+
+    for (const imp of testFile.imports) {
+      // Normalize: ensure trailing semicolon
+      const normalized = imp.endsWith(';') ? imp : imp + ';';
+      imports.add(normalized);
+    }
 
     // Ensure base Playwright import exists
     imports.add("import { test, expect } from '@playwright/test';");
