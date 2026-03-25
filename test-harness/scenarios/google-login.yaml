@@ -1,7 +1,8 @@
 name: google-login
 description: Test cases for Google.com login flow - positive, negative, and edge-case scenarios
 module: authentication
-target_url: https://accounts.google.com
+legacy_package: PKG_SECURITY
+modern_endpoint: /api/auth
 
 steps:
   # -----------------------------------------------------------

@@ -1,12 +1,12 @@
 package com.hrms.e2e;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.openqa.selenium.By;
-import org.openqa.selenium.Keys;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
@@ -17,7 +17,6 @@ import org.openqa.selenium.support.ui.WebDriverWait;
 import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -211,10 +210,9 @@ public class GoogleLoginTest {
     @Timeout(30)
     void testValidEmailProceedsToPasswordStep() {
         String testEmail = System.getenv("GOOGLE_TEST_EMAIL");
-        if (testEmail == null || testEmail.isBlank()) {
-            System.out.println("Skipping: GOOGLE_TEST_EMAIL not configured");
-            return;
-        }
+        Assumptions.assumeTrue(
+                testEmail != null && !testEmail.isBlank(),
+                "GOOGLE_TEST_EMAIL not configured");
 
         driver.get(GOOGLE_LOGIN_URL);
 
@@ -242,10 +240,9 @@ public class GoogleLoginTest {
     @Timeout(30)
     void testLoginWithEmptyPassword() {
         String testEmail = System.getenv("GOOGLE_TEST_EMAIL");
-        if (testEmail == null || testEmail.isBlank()) {
-            System.out.println("Skipping: GOOGLE_TEST_EMAIL not configured");
-            return;
-        }
+        Assumptions.assumeTrue(
+                testEmail != null && !testEmail.isBlank(),
+                "GOOGLE_TEST_EMAIL not configured");
 
         driver.get(GOOGLE_LOGIN_URL);
 
@@ -280,10 +277,9 @@ public class GoogleLoginTest {
     @Timeout(30)
     void testLoginWithWrongPassword() {
         String testEmail = System.getenv("GOOGLE_TEST_EMAIL");
-        if (testEmail == null || testEmail.isBlank()) {
-            System.out.println("Skipping: GOOGLE_TEST_EMAIL not configured");
-            return;
-        }
+        Assumptions.assumeTrue(
+                testEmail != null && !testEmail.isBlank(),
+                "GOOGLE_TEST_EMAIL not configured");
 
         driver.get(GOOGLE_LOGIN_URL);
 
@@ -319,11 +315,12 @@ public class GoogleLoginTest {
     void testSuccessfulLogin() {
         String testEmail = System.getenv("GOOGLE_TEST_EMAIL");
         String testPassword = System.getenv("GOOGLE_TEST_PASSWORD");
-        if (testEmail == null || testPassword == null
-                || testEmail.isBlank() || testPassword.isBlank()) {
-            System.out.println("Skipping: GOOGLE_TEST_EMAIL / GOOGLE_TEST_PASSWORD not configured");
-            return;
-        }
+        Assumptions.assumeTrue(
+                testEmail != null && !testEmail.isBlank(),
+                "GOOGLE_TEST_EMAIL not configured");
+        Assumptions.assumeTrue(
+                testPassword != null && !testPassword.isBlank(),
+                "GOOGLE_TEST_PASSWORD not configured");
 
         driver.get(GOOGLE_LOGIN_URL);
 
@@ -362,10 +359,9 @@ public class GoogleLoginTest {
     @Timeout(30)
     void testForgotPasswordLinkPresent() {
         String testEmail = System.getenv("GOOGLE_TEST_EMAIL");
-        if (testEmail == null || testEmail.isBlank()) {
-            System.out.println("Skipping: GOOGLE_TEST_EMAIL not configured");
-            return;
-        }
+        Assumptions.assumeTrue(
+                testEmail != null && !testEmail.isBlank(),
+                "GOOGLE_TEST_EMAIL not configured");
 
         driver.get(GOOGLE_LOGIN_URL);
 
@@ -414,10 +410,9 @@ public class GoogleLoginTest {
     @Timeout(30)
     void testPasswordFieldMasksInput() {
         String testEmail = System.getenv("GOOGLE_TEST_EMAIL");
-        if (testEmail == null || testEmail.isBlank()) {
-            System.out.println("Skipping: GOOGLE_TEST_EMAIL not configured");
-            return;
-        }
+        Assumptions.assumeTrue(
+                testEmail != null && !testEmail.isBlank(),
+                "GOOGLE_TEST_EMAIL not configured");
 
         driver.get(GOOGLE_LOGIN_URL);
 
@@ -446,10 +441,9 @@ public class GoogleLoginTest {
     @Timeout(30)
     void testShowPasswordToggle() {
         String testEmail = System.getenv("GOOGLE_TEST_EMAIL");
-        if (testEmail == null || testEmail.isBlank()) {
-            System.out.println("Skipping: GOOGLE_TEST_EMAIL not configured");
-            return;
-        }
+        Assumptions.assumeTrue(
+                testEmail != null && !testEmail.isBlank(),
+                "GOOGLE_TEST_EMAIL not configured");
 
         driver.get(GOOGLE_LOGIN_URL);
 
