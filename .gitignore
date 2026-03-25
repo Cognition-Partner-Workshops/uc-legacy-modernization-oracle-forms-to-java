@@ -27,5 +27,8 @@ venv/
 results/
 comparison-report.json
 
+# Node
+node_modules/
+
 # Docker
 *.env
