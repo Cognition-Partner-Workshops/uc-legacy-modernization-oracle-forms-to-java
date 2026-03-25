@@ -1,0 +1,37 @@
+{
+  "adminUser": {
+    "username": "james.richardson@company.com",
+    "password": "test_password_123",
+    "role": "ADMIN",
+    "empId": 1
+  },
+  "managerUser": {
+    "username": "manager@company.com",
+    "password": "test_password_123",
+    "role": "MANAGER",
+    "empId": 31
+  },
+  "regularUser": {
+    "username": "regular.user@company.com",
+    "password": "test_password_123",
+    "role": "EMPLOYEE",
+    "empId": 37
+  },
+  "invalidCredentials": [
+    {
+      "username": "james.richardson@company.com",
+      "password": "wrong_password",
+      "description": "valid user, wrong password"
+    },
+    {
+      "username": "nonexistent@company.com",
+      "password": "any_password",
+      "description": "non-existent user"
+    },
+    {
+      "username": "",
+      "password": "",
+      "description": "empty credentials"
+    }
+  ]
+}

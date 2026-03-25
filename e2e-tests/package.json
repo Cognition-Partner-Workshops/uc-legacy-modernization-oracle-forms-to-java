@@ -1,0 +1,25 @@
+{
+  "name": "hrms-e2e-tests",
+  "version": "1.0.0",
+  "description": "Playwright E2E tests for HRMS modernized application — migrated from UFT/QTP (VBScript)",
+  "scripts": {
+    "test": "npx playwright test",
+    "test:chromium": "npx playwright test --project=chromium",
+    "test:firefox": "npx playwright test --project=firefox",
+    "test:webkit": "npx playwright test --project=webkit",
+    "test:headed": "npx playwright test --headed",
+    "test:debug": "npx playwright test --debug",
+    "test:trace": "npx playwright test --trace on",
+    "report": "npx playwright show-report",
+    "typecheck": "npx tsc --noEmit",
+    "lint": "npx tsc --noEmit"
+  },
+  "keywords": ["playwright", "e2e", "hrms", "testing"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@types/node": "^25.5.0",
+    "typescript": "^6.0.2"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "regularRun": {
+    "periodId": "1",
+    "runType": "REGULAR"
+  },
+  "bonusRun": {
+    "periodId": "1",
+    "runType": "BONUS"
+  },
+  "employeePayVerification": {
+    "empId": 34,
+    "empName": "Jessica Nguyen",
+    "annualSalary": 82000,
+    "expectations": {
+      "basePay": "> 0",
+      "federalTax": "> 0",
+      "stateTax": "> 0",
+      "fica": "> 0",
+      "medicare": "> 0",
+      "netPay": "> 0"
+    },
+    "tolerance": 0.01
+  }
+}

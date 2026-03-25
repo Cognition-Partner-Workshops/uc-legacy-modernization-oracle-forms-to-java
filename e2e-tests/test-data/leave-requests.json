@@ -1,0 +1,31 @@
+{
+  "ptoRequest": {
+    "leaveType": "PTO",
+    "startDate": "2024-08-12",
+    "endDate": "2024-08-16",
+    "halfDay": false,
+    "reason": "Summer vacation",
+    "expectedDays": 5,
+    "empId": 34
+  },
+  "sickLeaveRequest": {
+    "leaveType": "Sick Leave",
+    "startDate": "2024-09-01",
+    "endDate": "2024-09-02",
+    "halfDay": false,
+    "reason": "Medical appointment",
+    "expectedDays": 2,
+    "empId": 34
+  },
+  "halfDayRequest": {
+    "leaveType": "PTO",
+    "startDate": "2024-10-15",
+    "endDate": "2024-10-15",
+    "halfDay": true,
+    "reason": "Personal errand",
+    "expectedDays": 0.5,
+    "empId": 34
+  },
+  "approverEmpId": 31,
+  "cancelReason": "Plans changed"
+}

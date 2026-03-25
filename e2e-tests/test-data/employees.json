@@ -1,0 +1,58 @@
+{
+  "newEmployee": {
+    "firstName": "JANE",
+    "lastName": "TESTSMITH",
+    "email": "jane.testsmith@company.com",
+    "hireDate": "2024-06-01",
+    "deptId": "31",
+    "jobId": "50",
+    "managerEmpId": "31",
+    "locationCode": "CHI",
+    "employmentType": "FULL_TIME",
+    "gender": "F",
+    "startingSalary": "75000"
+  },
+  "transferData": {
+    "newDeptId": "32",
+    "effectiveDate": "2024-09-01",
+    "reason": "Reorganization"
+  },
+  "terminationData": {
+    "terminationDate": "2024-12-31",
+    "reason": "VOLUNTARY"
+  },
+  "searchTests": [
+    { "searchTerm": "TESTSMITH", "expectedMinResults": 1 },
+    { "searchTerm": "Richardson", "expectedMinResults": 1 },
+    { "searchTerm": "NONEXISTENT_XYZ", "expectedMinResults": 0 }
+  ],
+  "validationTests": {
+    "missingFirstName": {
+      "firstName": "",
+      "lastName": "TEST",
+      "email": "test@company.com",
+      "hireDate": "2024-06-01",
+      "deptId": "31",
+      "jobId": "50",
+      "startingSalary": "50000"
+    },
+    "invalidEmail": {
+      "firstName": "TEST",
+      "lastName": "USER",
+      "email": "not-an-email",
+      "hireDate": "2024-06-01",
+      "deptId": "31",
+      "jobId": "50",
+      "startingSalary": "50000"
+    },
+    "negativeSalary": {
+      "firstName": "TEST",
+      "lastName": "USER",
+      "email": "test@company.com",
+      "hireDate": "2024-06-01",
+      "deptId": "31",
+      "jobId": "50",
+      "startingSalary": "-1000"
+    }
+  }
+}
