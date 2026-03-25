@@ -16,53 +16,31 @@ import java.util.Optional;
  */
 public interface EmployeeService {
 
-    /**
-     * Create a new employee.
-     * Replaces: PKG_EMPLOYEE.create_employee + HRMS_EMPLOYEE PRE-INSERT trigger
-     */
     Employee create(CreateEmployeeRequest request);
 
-    /**
-     * Update an existing employee.
-     * Replaces: PKG_EMPLOYEE.update_employee + HRMS_EMPLOYEE PRE-UPDATE trigger
-     */
     Employee update(Long empId, UpdateEmployeeRequest request);
 
-    /**
-     * Find employee by ID.
-     * Replaces: PKG_EMPLOYEE.get_employee
-     */
     Optional<Employee> findById(Long empId);
 
-    /**
-     * Search employees with criteria.
-     * Replaces: PKG_EMPLOYEE.search_employees
-     * FIXED: Uses Spring Data Specifications instead of string concatenation (SQL injection)
-     */
+    Optional<Employee> findByEmpNumber(String empNumber);
+
     List<Employee> search(EmployeeSearchCriteria criteria);
 
-    /**
-     * Terminate an employee.
-     * Replaces: PKG_EMPLOYEE.terminate_employee
-     */
     Employee terminate(Long empId, TerminationRequest request);
 
-    /**
-     * Transfer employee to a new department.
-     * Replaces: PKG_EMPLOYEE.transfer_employee
-     */
     Employee transfer(Long empId, TransferRequest request);
 
-    /**
-     * Get org chart starting from a root employee.
-     * Replaces: PKG_EMPLOYEE.get_org_chart + VW_ORG_HIERARCHY
-     * FIXED: Uses recursive CTE instead of CONNECT BY for better performance
-     */
+    Employee promote(Long empId, PromoteRequest request);
+
+    Employee rehire(Long empId, RehireRequest request);
+
     OrgChartNode getOrgChart(Long rootEmpId);
 
-    /**
-     * Get direct reports for a manager.
-     * Replaces: PKG_EMPLOYEE.get_direct_reports
-     */
     List<Employee> getDirectReports(Long managerId);
+
+    long getHeadcountByDept(Long deptId);
+
+    double getTenureYears(Long empId);
+
+    boolean isActive(Long empId);
 }
