@@ -1,0 +1,442 @@
+name: technical-debt-regression
+description: Regression tests for all documented technical debt items (TD-001 through TD-023) being fixed during migration
+module: cross-cutting
+legacy_package: MULTIPLE
+modern_endpoint: /api
+
+steps:
+  # =================================================================
+  # TD-001: MD5 password hashing -> BCrypt
+  # =================================================================
+  - name: "TD-001: Verify password is stored with BCrypt (not MD5)"
+    action: verify_password_hash_algorithm
+    input:
+      emp_id: 1
+    expect:
+      hash_algorithm: "BCRYPT"
+      hash_prefix: "$2a$"
+      # Legacy uses MD5 (32-char hex); Java must use BCrypt ($2a$ prefix)
+
+  # =================================================================
+  # TD-002: No account lockout -> lockout after N failed attempts
+  # =================================================================
+  - name: "TD-002: Setup - ensure account is unlocked"
+    action: unlock_account
+    input:
+      username: "test.lockout@company.com"
+    expect:
+      account_locked: false
+
+  - name: "TD-002: Failed login attempt 1 of 5"
+    action: login
+    input:
+      username: "test.lockout@company.com"
+      password: "wrong1"
+    expect:
+      success: false
+
+  - name: "TD-002: Failed login attempt 2 of 5"
+    action: login
+    input:
+      username: "test.lockout@company.com"
+      password: "wrong2"
+    expect:
+      success: false
+
+  - name: "TD-002: Failed login attempt 3 of 5"
+    action: login
+    input:
+      username: "test.lockout@company.com"
+      password: "wrong3"
+    expect:
+      success: false
+
+  - name: "TD-002: Failed login attempt 4 of 5"
+    action: login
+    input:
+      username: "test.lockout@company.com"
+      password: "wrong4"
+    expect:
+      success: false
+
+  - name: "TD-002: Failed login attempt 5 of 5 (triggers lockout)"
+    action: login
+    input:
+      username: "test.lockout@company.com"
+      password: "wrong5"
+    expect:
+      success: false
+      account_locked: true
+
+  - name: "TD-002: Verify account is locked even with correct password"
+    action: login
+    input:
+      username: "test.lockout@company.com"
+      password: "correct_password"
+    expect:
+      success: false
+      error_message: "*Account is locked*"
+
+  # =================================================================
+  # TD-003: Hard-coded encryption key -> externalized key management
+  # =================================================================
+  - name: "TD-003: Verify encryption uses externalized key"
+    action: verify_encryption_config
+    input:
+      check_type: "KEY_MANAGEMENT"
+    expect:
+      hard_coded_key: false
+      key_source: "EXTERNAL"
+
+  - name: "TD-003: Verify SSN encryption roundtrip with managed key"
+    action: encrypt_ssn
+    input:
+      ssn: "987-65-4321"
+    expect:
+      encrypted: true
+    save_as: td003_encrypted
+
+  - name: "TD-003: Decrypt and verify with managed key"
+    action: decrypt_ssn
+    input:
+      encrypted_value: "{{td003_encrypted.encrypted_value}}"
+    expect:
+      ssn: "987-65-4321"
+
+  # =================================================================
+  # TD-004: SQL injection in search -> parameterized queries
+  # =================================================================
+  - name: "TD-004: SQL injection attempt - single quote escape"
+    action: search_employees
+    input:
+      name: "' OR '1'='1' --"
+    expect:
+      count: 0
+      error: false
+
+  - name: "TD-004: SQL injection attempt - UNION SELECT"
+    action: search_employees
+    input:
+      name: "' UNION SELECT username, password FROM users --"
+    expect:
+      count: 0
+      error: false
+
+  - name: "TD-004: SQL injection attempt - DROP TABLE"
+    action: search_employees
+    input:
+      name: "'; DROP TABLE employees; --"
+    expect:
+      count: 0
+      error: false
+
+  - name: "TD-004: Valid search still works after injection tests"
+    action: search_employees
+    input:
+      name: "RICHARDSON"
+    expect:
+      count: ">= 1"
+      results[0].last_name: "RICHARDSON"
+
+  # =================================================================
+  # TD-005: Cleartext password transmission -> HTTPS/TLS
+  # =================================================================
+  - name: "TD-005: Verify auth endpoint enforces HTTPS"
+    action: verify_transport_security
+    input:
+      endpoint: "/api/auth/login"
+    expect:
+      tls_required: true
+      http_redirect: true
+
+  # =================================================================
+  # TD-010: Employee number race condition -> sequence-based generation
+  # =================================================================
+  - name: "TD-010: Create first employee (concurrent simulation)"
+    action: create
+    input:
+      first_name: "RACE"
+      last_name: "CONDITION1"
+      email: "race.condition1@company.com"
+      hire_date: "2024-07-01"
+      dept_id: 31
+      job_id: 50
+      starting_salary: 60000
+    expect:
+      employment_status: "ACTIVE"
+      emp_number: "EMP-*"
+    save_as: race_emp_1
+
+  - name: "TD-010: Create second employee immediately after"
+    action: create
+    input:
+      first_name: "RACE"
+      last_name: "CONDITION2"
+      email: "race.condition2@company.com"
+      hire_date: "2024-07-01"
+      dept_id: 31
+      job_id: 50
+      starting_salary: 60000
+    expect:
+      employment_status: "ACTIVE"
+      emp_number: "EMP-*"
+    save_as: race_emp_2
+
+  - name: "TD-010: Verify employee numbers are unique"
+    action: verify_unique
+    input:
+      field: "emp_number"
+      value1: "{{race_emp_1.emp_number}}"
+      value2: "{{race_emp_2.emp_number}}"
+    expect:
+      unique: true
+
+  # =================================================================
+  # TD-011: Partial payroll commits every 50 -> atomic batch
+  # =================================================================
+  - name: "TD-011: Create payroll run with intentional error employee"
+    action: create_run
+    input:
+      period_id: 7
+      run_type: "REGULAR"
+    expect:
+      status: "PENDING"
+    save_as: td011_run
+
+  - name: "TD-011: Calculate payroll (should be atomic - all or nothing)"
+    action: calculate_with_error_simulation
+    input:
+      run_id: "{{td011_run.run_id}}"
+      simulate_error_at_employee: 25
+    expect:
+      # Java implementation should roll back entire batch on error
+      status: "FAILED"
+      employees_committed: 0
+      error_message: "*Payroll calculation rolled back*"
+
+  # =================================================================
+  # TD-012: Leave carryover double-subtraction -> idempotent expiry
+  # =================================================================
+  - name: "TD-012: Get initial leave balance"
+    action: get_leave_balance
+    input:
+      emp_id: 34
+      leave_type_id: 1
+    save_as: td012_initial_balance
+
+  - name: "TD-012: First carryover expiry run"
+    action: expire_carryover
+    input:
+      expiry_date: "2024-03-31"
+      carryover_year: 2023
+    save_as: td012_first_run
+
+  - name: "TD-012: Get balance after first expiry"
+    action: get_leave_balance
+    input:
+      emp_id: 34
+      leave_type_id: 1
+    save_as: td012_after_first
+
+  - name: "TD-012: Second carryover expiry run (idempotency check)"
+    action: expire_carryover
+    input:
+      expiry_date: "2024-03-31"
+      carryover_year: 2023
+    save_as: td012_second_run
+
+  - name: "TD-012: Get balance after second expiry (should be unchanged)"
+    action: get_leave_balance
+    input:
+      emp_id: 34
+      leave_type_id: 1
+    expect:
+      # Balance after second run should equal balance after first run
+      available: "{{td012_after_first.available}}"
+
+  # =================================================================
+  # TD-013: Row-by-row payroll -> bulk processing (performance)
+  # =================================================================
+  - name: "TD-013: Calculate payroll and verify batch processing"
+    action: create_run
+    input:
+      period_id: 8
+      run_type: "REGULAR"
+    expect:
+      status: "PENDING"
+    save_as: td013_run
+
+  - name: "TD-013: Calculate with performance tracking"
+    action: calculate
+    input:
+      run_id: "{{td013_run.run_id}}"
+      track_performance: true
+    expect:
+      status: "CALCULATED"
+      processing_method: "BATCH"
+    tolerance:
+      total_gross: 0.01
+      total_net: 0.01
+
+  # =================================================================
+  # TD-014: Org chart timeout >500 employees -> optimized recursive CTE
+  # =================================================================
+  - name: "TD-014: Get full org chart from root (performance test)"
+    action: get_org_chart
+    input:
+      root_emp_id: 1
+      max_depth: 10
+      track_performance: true
+    expect:
+      count: ">= 1"
+      # Should complete within reasonable time (legacy times out >500 employees)
+      execution_time_ms: "< 5000"
+
+  # =================================================================
+  # TD-020: Hard-coded tax brackets -> config/database driven
+  # =================================================================
+  - name: "TD-020: Verify tax brackets are externally configured"
+    action: verify_tax_config
+    input:
+      tax_type: "FEDERAL"
+      tax_year: 2024
+    expect:
+      source: "EXTERNAL_CONFIG"
+      hard_coded: false
+      brackets_count: ">= 1"
+
+  - name: "TD-020: Verify state tax rates are externally configured"
+    action: verify_tax_config
+    input:
+      tax_type: "STATE"
+      state_code: "IL"
+    expect:
+      source: "EXTERNAL_CONFIG"
+      hard_coded: false
+
+  # =================================================================
+  # TD-021: Overtime holiday bug -> holidays excluded from overtime
+  # =================================================================
+  - name: "TD-021: Calculate overtime during week with holiday"
+    action: calculate_overtime
+    input:
+      emp_id: 34
+      week_start: "2024-07-01"
+      week_end: "2024-07-07"
+      hours_worked:
+        "2024-07-01": 9
+        "2024-07-02": 9
+        "2024-07-03": 9
+        "2024-07-04": 8  # Independence Day - holiday
+        "2024-07-05": 9
+      overtime_threshold: 40
+    expect:
+      # July 4 is a holiday; 8 hours should NOT count toward overtime threshold
+      regular_hours: 36
+      holiday_hours: 8
+      overtime_hours: 0
+      holiday_excluded: true
+
+  - name: "TD-021: Same scenario without holiday exclusion would produce overtime"
+    action: calculate_overtime
+    input:
+      emp_id: 34
+      week_start: "2024-07-08"
+      week_end: "2024-07-14"
+      hours_worked:
+        "2024-07-08": 9
+        "2024-07-09": 9
+        "2024-07-10": 9
+        "2024-07-11": 9
+        "2024-07-12": 9
+      overtime_threshold: 40
+    expect:
+      regular_hours: 40
+      overtime_hours: 5
+    tolerance:
+      overtime_hours: 0.01
+
+  # =================================================================
+  # TD-022: Half-day overlap detection bug -> correct half-day handling
+  # =================================================================
+  - name: "TD-022: Submit AM half-day leave"
+    action: submit_leave
+    input:
+      emp_id: 34
+      leave_type_id: 1
+      start_date: "2024-09-16"
+      end_date: "2024-09-16"
+      half_day_flag: "Y"
+      half_day_period: "AM"
+      reason: "Morning appointment"
+    expect:
+      status: "PENDING"
+      total_days: 0.5
+    save_as: td022_am_leave
+
+  - name: "TD-022: Submit PM half-day on same day (should succeed)"
+    action: submit_leave
+    input:
+      emp_id: 34
+      leave_type_id: 1
+      start_date: "2024-09-16"
+      end_date: "2024-09-16"
+      half_day_flag: "Y"
+      half_day_period: "PM"
+      reason: "Afternoon appointment"
+    expect:
+      status: "PENDING"
+      total_days: 0.5
+
+  - name: "TD-022: Submit duplicate AM half-day (should fail)"
+    action: submit_leave
+    input:
+      emp_id: 34
+      leave_type_id: 1
+      start_date: "2024-09-16"
+      end_date: "2024-09-16"
+      half_day_flag: "Y"
+      half_day_period: "AM"
+      reason: "Duplicate AM"
+    expect:
+      error: true
+      error_message: "*overlapping leave request*"
+
+  # =================================================================
+  # TD-023: Holiday observed date bug -> correct observed date handling
+  # =================================================================
+  - name: "TD-023: Business days when July 4 falls on Saturday (observed Friday)"
+    action: calculate_business_days
+    input:
+      start_date: "2020-06-29"
+      end_date: "2020-07-05"
+    expect:
+      # July 4, 2020 = Saturday, observed Friday July 3
+      business_days: 4
+
+  - name: "TD-023: Business days when July 4 falls on Sunday (observed Monday)"
+    action: calculate_business_days
+    input:
+      start_date: "2021-07-01"
+      end_date: "2021-07-07"
+    expect:
+      # July 4, 2021 = Sunday, observed Monday July 5
+      business_days: 4
+
+  - name: "TD-023: Christmas on Saturday (observed Friday Dec 24)"
+    action: calculate_business_days
+    input:
+      start_date: "2021-12-20"
+      end_date: "2021-12-26"
+    expect:
+      # Dec 25, 2021 = Saturday, observed Friday Dec 24
+      business_days: 4
+
+  - name: "TD-023: New Year on Saturday (observed Friday Dec 31)"
+    action: calculate_business_days
+    input:
+      start_date: "2021-12-27"
+      end_date: "2022-01-02"
+    expect:
+      # Jan 1, 2022 = Saturday, observed Friday Dec 31
+      business_days: 4

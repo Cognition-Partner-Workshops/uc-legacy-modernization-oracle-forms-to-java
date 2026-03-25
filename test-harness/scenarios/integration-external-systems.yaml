@@ -1,0 +1,163 @@
+name: integration-external-systems
+description: External system integrations - GL journal, benefits feed, time/attendance, org sync
+module: integration
+legacy_package: PKG_INTEGRATION
+modern_endpoint: /api/integrations
+
+steps:
+  # ---------------------------------------------------------------
+  # generate_gl_journal — GL posting to financial system
+  # ---------------------------------------------------------------
+  - name: Generate GL journal entries for payroll period
+    action: generate_gl_journal
+    input:
+      period_id: 1
+      journal_type: "PAYROLL"
+    expect:
+      status: "GENERATED"
+      entry_count: "> 0"
+      total_debits: "> 0"
+      total_credits: "> 0"
+      balanced: true
+    save_as: gl_journal
+    tolerance:
+      total_debits: 0.01
+      total_credits: 0.01
+
+  - name: Verify GL journal is balanced (debits = credits)
+    action: get_gl_journal_details
+    input:
+      journal_id: "{{gl_journal.journal_id}}"
+    expect:
+      balance_check: "BALANCED"
+      entries_count: "> 0"
+    tolerance:
+      total_debits: 0.01
+      total_credits: 0.01
+
+  # ---------------------------------------------------------------
+  # export_benefits_feed — ADP benefits file export
+  # ---------------------------------------------------------------
+  - name: Export benefits feed to ADP format
+    action: export_benefits_feed
+    input:
+      effective_date: "2024-07-01"
+      feed_type: "FULL"
+    expect:
+      status: "EXPORTED"
+      record_count: "> 0"
+      file_generated: true
+    save_as: benefits_feed
+
+  - name: Export incremental benefits feed (changes only)
+    action: export_benefits_feed
+    input:
+      effective_date: "2024-07-15"
+      feed_type: "INCREMENTAL"
+      since_date: "2024-07-01"
+    expect:
+      status: "EXPORTED"
+      record_count: ">= 0"
+      file_generated: true
+
+  # ---------------------------------------------------------------
+  # import_time_attendance — time/attendance data import
+  # ---------------------------------------------------------------
+  - name: Import time and attendance data
+    action: import_time_attendance
+    input:
+      import_date: "2024-07-01"
+      file_format: "CSV"
+      data:
+        - emp_id: 34
+          regular_hours: 80
+          overtime_hours: 4
+          period_start: "2024-06-16"
+          period_end: "2024-06-30"
+        - emp_id: 35
+          regular_hours: 80
+          overtime_hours: 0
+          period_start: "2024-06-16"
+          period_end: "2024-06-30"
+    expect:
+      status: "IMPORTED"
+      records_processed: 2
+      records_failed: 0
+    save_as: time_import
+
+  - name: Import time attendance with invalid employee
+    action: import_time_attendance
+    input:
+      import_date: "2024-07-01"
+      file_format: "CSV"
+      data:
+        - emp_id: 99999
+          regular_hours: 80
+          overtime_hours: 0
+          period_start: "2024-06-16"
+          period_end: "2024-06-30"
+    expect:
+      status: "PARTIAL"
+      records_processed: 0
+      records_failed: 1
+      errors[0].emp_id: 99999
+      errors[0].reason: "*Employee not found*"
+
+  # ---------------------------------------------------------------
+  # sync_org_structure — organizational structure synchronization
+  # ---------------------------------------------------------------
+  - name: Sync organization structure to external system
+    action: sync_org_structure
+    input:
+      sync_date: "2024-07-01"
+      target_system: "ADP"
+    expect:
+      status: "SYNCED"
+      departments_synced: "> 0"
+      employees_synced: "> 0"
+    save_as: org_sync
+
+  # ---------------------------------------------------------------
+  # get_integration_status — monitoring
+  # ---------------------------------------------------------------
+  - name: Get integration status for all feeds
+    action: get_integration_status
+    input:
+      date_from: "2024-07-01"
+      date_to: "2024-07-31"
+    expect:
+      integrations_count: ">= 1"
+
+  - name: Get integration status for specific feed type
+    action: get_integration_status
+    input:
+      feed_type: "GL_JOURNAL"
+      date_from: "2024-07-01"
+      date_to: "2024-07-31"
+    expect:
+      integrations_count: ">= 1"
+      results[0].feed_type: "GL_JOURNAL"
+
+  # ---------------------------------------------------------------
+  # Negative: Generate GL journal for non-existent period
+  # ---------------------------------------------------------------
+  - name: Generate GL journal for invalid period
+    action: generate_gl_journal
+    input:
+      period_id: 99999
+      journal_type: "PAYROLL"
+    expect:
+      error: true
+      error_message: "*Invalid or non-existent period*"
+
+  # ---------------------------------------------------------------
+  # Negative: Export benefits feed with invalid date
+  # ---------------------------------------------------------------
+  - name: Export benefits feed with future effective date
+    action: export_benefits_feed
+    input:
+      effective_date: "2099-01-01"
+      feed_type: "FULL"
+    expect:
+      error: true
+      error_message: "*Effective date cannot be in the future*"

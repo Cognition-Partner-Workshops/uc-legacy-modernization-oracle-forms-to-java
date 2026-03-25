@@ -1,0 +1,204 @@
+name: reporting-module
+description: Reporting module - headcount, compensation, turnover, new hires, leave utilization, payroll summary, EEO compliance
+module: reporting
+legacy_package: PKG_REPORTING
+modern_endpoint: /api/reports
+
+steps:
+  # ---------------------------------------------------------------
+  # headcount_report
+  # ---------------------------------------------------------------
+  - name: Generate headcount report by department
+    action: headcount_report
+    input:
+      as_of_date: "2024-06-30"
+      group_by: "DEPARTMENT"
+    expect:
+      total_headcount: "> 0"
+      departments_count: ">= 1"
+    save_as: headcount
+
+  - name: Generate headcount report by location
+    action: headcount_report
+    input:
+      as_of_date: "2024-06-30"
+      group_by: "LOCATION"
+    expect:
+      total_headcount: "> 0"
+      locations_count: ">= 1"
+
+  # ---------------------------------------------------------------
+  # compensation_summary
+  # ---------------------------------------------------------------
+  - name: Generate compensation summary report
+    action: compensation_summary
+    input:
+      as_of_date: "2024-06-30"
+      group_by: "DEPARTMENT"
+    expect:
+      total_compensation: "> 0"
+      avg_salary: "> 0"
+      median_salary: "> 0"
+      departments_count: ">= 1"
+    tolerance:
+      total_compensation: 0.01
+      avg_salary: 0.01
+      median_salary: 0.01
+
+  - name: Generate compensation summary by job grade
+    action: compensation_summary
+    input:
+      as_of_date: "2024-06-30"
+      group_by: "JOB_GRADE"
+    expect:
+      total_compensation: "> 0"
+    tolerance:
+      total_compensation: 0.01
+
+  # ---------------------------------------------------------------
+  # turnover_report
+  # ---------------------------------------------------------------
+  - name: Generate turnover report for year
+    action: turnover_report
+    input:
+      start_date: "2024-01-01"
+      end_date: "2024-06-30"
+    expect:
+      total_terminations: ">= 0"
+      turnover_rate: ">= 0"
+      voluntary_count: ">= 0"
+      involuntary_count: ">= 0"
+
+  - name: Generate turnover report by department
+    action: turnover_report
+    input:
+      start_date: "2024-01-01"
+      end_date: "2024-06-30"
+      group_by: "DEPARTMENT"
+    expect:
+      departments_count: ">= 1"
+
+  # ---------------------------------------------------------------
+  # new_hires_report
+  # ---------------------------------------------------------------
+  - name: Generate new hires report
+    action: new_hires_report
+    input:
+      start_date: "2024-01-01"
+      end_date: "2024-06-30"
+    expect:
+      total_hires: ">= 0"
+    save_as: new_hires
+
+  - name: Generate new hires report by department
+    action: new_hires_report
+    input:
+      start_date: "2024-01-01"
+      end_date: "2024-06-30"
+      group_by: "DEPARTMENT"
+    expect:
+      departments_count: ">= 1"
+
+  # ---------------------------------------------------------------
+  # leave_utilization_report
+  # ---------------------------------------------------------------
+  - name: Generate leave utilization report
+    action: leave_utilization_report
+    input:
+      year: 2024
+    expect:
+      total_leave_taken: ">= 0"
+      avg_utilization_pct: ">= 0"
+      leave_types_count: ">= 1"
+
+  - name: Generate leave utilization report by department
+    action: leave_utilization_report
+    input:
+      year: 2024
+      group_by: "DEPARTMENT"
+    expect:
+      departments_count: ">= 1"
+
+  # ---------------------------------------------------------------
+  # payroll_summary_report
+  # ---------------------------------------------------------------
+  - name: Generate payroll summary report for period
+    action: payroll_summary_report
+    input:
+      period_id: 1
+    expect:
+      total_gross: "> 0"
+      total_net: "> 0"
+      total_taxes: "> 0"
+      employee_count: "> 0"
+    tolerance:
+      total_gross: 0.01
+      total_net: 0.01
+      total_taxes: 0.01
+
+  - name: Generate payroll summary report for date range
+    action: payroll_summary_report
+    input:
+      start_date: "2024-01-01"
+      end_date: "2024-06-30"
+    expect:
+      total_gross: "> 0"
+      total_net: "> 0"
+      periods_count: ">= 1"
+    tolerance:
+      total_gross: 0.01
+      total_net: 0.01
+
+  # ---------------------------------------------------------------
+  # eeo_compliance_report
+  # ---------------------------------------------------------------
+  - name: Generate EEO compliance report
+    action: eeo_compliance_report
+    input:
+      year: 2024
+    expect:
+      total_employees: "> 0"
+      categories_count: ">= 1"
+    save_as: eeo_report
+
+  # ---------------------------------------------------------------
+  # refresh_reporting_tables — batch job to refresh materialized views
+  # ---------------------------------------------------------------
+  - name: Refresh reporting tables
+    action: refresh_reporting_tables
+    input:
+      tables: "ALL"
+    expect:
+      tables_refreshed: ">= 1"
+      status: "COMPLETED"
+
+  - name: Refresh specific reporting table
+    action: refresh_reporting_tables
+    input:
+      tables: "HEADCOUNT_SUMMARY"
+    expect:
+      tables_refreshed: 1
+      status: "COMPLETED"
+
+  # ---------------------------------------------------------------
+  # Negative: Report with invalid date range
+  # ---------------------------------------------------------------
+  - name: Generate report with end date before start date
+    action: turnover_report
+    input:
+      start_date: "2024-06-30"
+      end_date: "2024-01-01"
+    expect:
+      error: true
+      error_message: "*End date must be on or after start date*"
+
+  # ---------------------------------------------------------------
+  # Negative: Report for non-existent period
+  # ---------------------------------------------------------------
+  - name: Generate payroll summary for non-existent period
+    action: payroll_summary_report
+    input:
+      period_id: 99999
+    expect:
+      error: true
+      error_message: "*Period not found*"

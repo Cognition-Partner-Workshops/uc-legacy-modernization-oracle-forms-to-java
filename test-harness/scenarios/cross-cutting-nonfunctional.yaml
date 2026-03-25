@@ -1,0 +1,288 @@
+name: cross-cutting-nonfunctional
+description: Non-functional and cross-cutting test scenarios - data migration, audit equivalence, notification side-effects, error handling, date/time, forms trigger logic
+module: cross-cutting
+legacy_package: MULTIPLE
+modern_endpoint: /api
+
+steps:
+  # =================================================================
+  # Data Migration Validation
+  # =================================================================
+  - name: Verify employee table row count matches
+    action: verify_data_migration
+    input:
+      table_name: "EMPLOYEES"
+      check_type: "ROW_COUNT"
+    expect:
+      legacy_count: "> 0"
+      modern_count: "> 0"
+      counts_match: true
+
+  - name: Verify payroll runs table row count matches
+    action: verify_data_migration
+    input:
+      table_name: "PAYROLL_RUNS"
+      check_type: "ROW_COUNT"
+    expect:
+      counts_match: true
+
+  - name: Verify leave balances table row count matches
+    action: verify_data_migration
+    input:
+      table_name: "LEAVE_BALANCES"
+      check_type: "ROW_COUNT"
+    expect:
+      counts_match: true
+
+  - name: Verify departments table row count matches
+    action: verify_data_migration
+    input:
+      table_name: "DEPARTMENTS"
+      check_type: "ROW_COUNT"
+    expect:
+      counts_match: true
+
+  - name: Verify salary records table row count matches
+    action: verify_data_migration
+    input:
+      table_name: "SALARY_RECORDS"
+      check_type: "ROW_COUNT"
+    expect:
+      counts_match: true
+
+  - name: Verify sample employee data integrity
+    action: verify_data_migration
+    input:
+      table_name: "EMPLOYEES"
+      check_type: "SAMPLE_DATA"
+      sample_ids: [1, 34, 37]
+    expect:
+      all_match: true
+      mismatches: 0
+
+  # =================================================================
+  # Audit Trail Equivalence
+  # =================================================================
+  - name: Create employee and verify audit logs match
+    action: create_employee_with_audit
+    input:
+      first_name: "AUDIT"
+      last_name: "TEST"
+      email: "audit.test@company.com"
+      hire_date: "2024-07-01"
+      dept_id: 31
+      job_id: 50
+      starting_salary: 70000
+    expect:
+      employment_status: "ACTIVE"
+    save_as: audit_emp
+
+  - name: Verify audit log created in both systems
+    action: compare_audit_logs
+    input:
+      table_name: "EMPLOYEES"
+      record_id: "{{audit_emp.emp_id}}"
+      action_type: "CREATE"
+    expect:
+      legacy_audit_exists: true
+      modern_audit_exists: true
+      fields_match: true
+
+  # =================================================================
+  # Notification Side-Effects Validation
+  # =================================================================
+  - name: Create employee and verify welcome notification generated
+    action: create
+    input:
+      first_name: "NOTIF"
+      last_name: "SIDEEFFECT"
+      email: "notif.sideeffect@company.com"
+      hire_date: "2024-07-01"
+      dept_id: 31
+      job_id: 50
+      starting_salary: 70000
+    expect:
+      employment_status: "ACTIVE"
+    save_as: notif_emp
+
+  - name: Verify new-hire notification was generated
+    action: verify_notification_generated
+    input:
+      emp_id: "{{notif_emp.emp_id}}"
+      event_type: "NEW_HIRE"
+    expect:
+      notification_exists: true
+      notification_type: "EMAIL"
+
+  - name: Submit leave and verify notification to manager
+    action: submit_leave
+    input:
+      emp_id: "{{notif_emp.emp_id}}"
+      leave_type_id: 1
+      start_date: "2024-10-01"
+      end_date: "2024-10-03"
+      half_day_flag: "N"
+      reason: "Notification test"
+    expect:
+      status: "PENDING"
+    save_as: notif_leave
+
+  - name: Verify leave request notification to manager
+    action: verify_notification_generated
+    input:
+      emp_id: "{{notif_emp.emp_id}}"
+      event_type: "LEAVE_REQUEST_SUBMITTED"
+    expect:
+      notification_exists: true
+
+  # =================================================================
+  # Error Handling Equivalence
+  # =================================================================
+  - name: Verify error response format for invalid employee
+    action: verify_error_format
+    input:
+      endpoint: "/api/employees/99999"
+      method: "GET"
+    expect:
+      http_status: 404
+      error_code: -20001
+      error_message: "*Employee not found*"
+      # Legacy: RAISE_APPLICATION_ERROR(-20001, 'Employee not found')
+      # Modern: HTTP 404 + JSON { "error_code": -20001, "message": "Employee not found" }
+      format: "JSON"
+
+  - name: Verify error response format for validation failure
+    action: verify_error_format
+    input:
+      endpoint: "/api/employees"
+      method: "POST"
+      body:
+        first_name: null
+        last_name: null
+    expect:
+      http_status: 400
+      error_code: -20010
+      format: "JSON"
+
+  - name: Verify error response format for unauthorized access
+    action: verify_error_format
+    input:
+      endpoint: "/api/payroll/1/approve"
+      method: "POST"
+      auth: "non_admin_token"
+    expect:
+      http_status: 403
+      format: "JSON"
+
+  # =================================================================
+  # Date/Time Handling
+  # =================================================================
+  - name: Verify date boundary - end of year
+    action: create
+    input:
+      first_name: "DATETEST"
+      last_name: "YEAREND"
+      email: "date.yearend@company.com"
+      hire_date: "2024-12-31"
+      dept_id: 31
+      job_id: 50
+      starting_salary: 65000
+    expect:
+      hire_date: "2024-12-31"
+      employment_status: "ACTIVE"
+
+  - name: Verify date boundary - leap year
+    action: create
+    input:
+      first_name: "DATETEST"
+      last_name: "LEAPYEAR"
+      email: "date.leapyear@company.com"
+      hire_date: "2024-02-29"
+      dept_id: 31
+      job_id: 50
+      starting_salary: 65000
+    expect:
+      hire_date: "2024-02-29"
+      employment_status: "ACTIVE"
+
+  - name: Verify date boundary - start of year
+    action: create
+    input:
+      first_name: "DATETEST"
+      last_name: "YEARSTART"
+      email: "date.yearstart@company.com"
+      hire_date: "2024-01-01"
+      dept_id: 31
+      job_id: 50
+      starting_salary: 65000
+    expect:
+      hire_date: "2024-01-01"
+      employment_status: "ACTIVE"
+
+  # =================================================================
+  # Forms Trigger Logic Validation
+  # (WHEN-VALIDATE-ITEM, PRE-INSERT, POST-QUERY from Oracle Forms)
+  # =================================================================
+  - name: "Forms: WHEN-VALIDATE-ITEM - email format validation on save"
+    action: update_employee
+    input:
+      emp_id: 34
+      email: "invalid-email-no-at-sign"
+    expect:
+      error: true
+      error_message: "*Invalid email format*"
+
+  - name: "Forms: WHEN-VALIDATE-ITEM - hire date not in future"
+    action: create
+    input:
+      first_name: "FUTURE"
+      last_name: "HIRE"
+      email: "future.hire@company.com"
+      hire_date: "2099-01-01"
+      dept_id: 31
+      job_id: 50
+      starting_salary: 65000
+    expect:
+      error: true
+      error_message: "*Hire date cannot be in the future*"
+
+  - name: "Forms: PRE-INSERT - auto-generate employee number"
+    action: create
+    input:
+      first_name: "AUTONUM"
+      last_name: "TEST"
+      email: "autonum.test@company.com"
+      hire_date: "2024-07-01"
+      dept_id: 31
+      job_id: 50
+      starting_salary: 65000
+    expect:
+      emp_number: "EMP-*"
+      employment_status: "ACTIVE"
+
+  - name: "Forms: PRE-INSERT - set default values"
+    action: create
+    input:
+      first_name: "DEFAULTS"
+      last_name: "TEST"
+      email: "defaults.test@company.com"
+      hire_date: "2024-07-01"
+      dept_id: 31
+      job_id: 50
+      starting_salary: 65000
+    expect:
+      employment_status: "ACTIVE"
+      active_flag: "Y"
+      country_code: "US"
+
+  - name: "Forms: POST-QUERY - computed fields populated on read"
+    action: read_employee
+    input:
+      emp_id: 34
+    expect:
+      # Computed fields that were populated by POST-QUERY triggers in Forms
+      full_name: "*"
+      dept_name: "*"
+      job_title: "*"
+      manager_name: "*"
+      tenure_years: ">= 0"

@@ -1,0 +1,196 @@
+name: employee-update-promote-rehire
+description: Employee update, promotion, rehire, and additional lifecycle operations
+module: employee
+legacy_package: PKG_EMPLOYEE
+modern_endpoint: /api/employees
+
+steps:
+  # ---------------------------------------------------------------
+  # Setup: Create an employee to work with
+  # ---------------------------------------------------------------
+  - name: Create employee for lifecycle tests
+    action: create
+    input:
+      first_name: "ALEX"
+      last_name: "LIFECYCLE"
+      email: "alex.lifecycle@company.com"
+      hire_date: "2023-01-15"
+      dept_id: 31
+      job_id: 50
+      manager_emp_id: 31
+      location_code: "CHI"
+      employment_type: "FULL_TIME"
+      starting_salary: 65000
+    expect:
+      employment_status: "ACTIVE"
+      active_flag: "Y"
+      emp_number: "EMP-*"
+    save_as: lifecycle_emp
+
+  # ---------------------------------------------------------------
+  # update_employee — partial update pattern (NVL-based)
+  # ---------------------------------------------------------------
+  - name: Update employee personal info (partial update)
+    action: update
+    input:
+      emp_id: "{{lifecycle_emp.emp_id}}"
+      email: "alex.lifecycle.new@company.com"
+      phone_work: "312-555-0100"
+      phone_mobile: "312-555-0101"
+      address_line1: "123 Main Street"
+      city: "Chicago"
+      state_province: "IL"
+      postal_code: "60601"
+      country_code: "US"
+    expect:
+      email: "alex.lifecycle.new@company.com"
+      phone_work: "312-555-0100"
+      city: "Chicago"
+      # Unchanged fields should retain original values
+      first_name: "ALEX"
+      last_name: "LIFECYCLE"
+      dept_id: 31
+
+  - name: Update only last name (single field partial update)
+    action: update
+    input:
+      emp_id: "{{lifecycle_emp.emp_id}}"
+      last_name: "LIFECYCLEUPD"
+    expect:
+      last_name: "LIFECYCLEUPD"
+      # All other fields remain unchanged
+      email: "alex.lifecycle.new@company.com"
+      first_name: "ALEX"
+
+  # ---------------------------------------------------------------
+  # promote_employee — job change + salary change + history
+  # ---------------------------------------------------------------
+  - name: Promote employee to new job with salary increase
+    action: promote
+    input:
+      emp_id: "{{lifecycle_emp.emp_id}}"
+      new_job_id: 51
+      new_salary: 80000
+      effective_date: "2024-06-01"
+      comments: "Annual performance promotion"
+    expect:
+      job_id: 51
+    save_as: promoted_emp
+
+  - name: Verify salary updated after promotion
+    action: get_current_salary
+    input:
+      emp_id: "{{lifecycle_emp.emp_id}}"
+    expect:
+      base_salary: 80000
+    tolerance:
+      base_salary: 0.01
+
+  - name: Verify promotion recorded in history
+    action: get_history
+    input:
+      emp_id: "{{lifecycle_emp.emp_id}}"
+      change_type: "PROMOTION"
+    expect:
+      count: ">= 1"
+      results[0].old_job_id: 50
+      results[0].new_job_id: 51
+      results[0].old_salary: 65000
+      results[0].new_salary: 80000
+
+  # ---------------------------------------------------------------
+  # get_employee_by_number — lookup by EMP-NNNNNN
+  # ---------------------------------------------------------------
+  - name: Lookup employee by employee number
+    action: get_by_number
+    input:
+      emp_number: "{{lifecycle_emp.emp_number}}"
+    expect:
+      emp_id: "{{lifecycle_emp.emp_id}}"
+      first_name: "ALEX"
+
+  # ---------------------------------------------------------------
+  # get_direct_reports — manager hierarchy
+  # ---------------------------------------------------------------
+  - name: Get direct reports for a manager
+    action: get_direct_reports
+    input:
+      manager_emp_id: 31
+    expect:
+      count: ">= 1"
+
+  # ---------------------------------------------------------------
+  # get_org_chart — recursive hierarchy (TD-014)
+  # ---------------------------------------------------------------
+  - name: Get org chart from top-level employee
+    action: get_org_chart
+    input:
+      root_emp_id: 1
+      max_depth: 5
+    expect:
+      count: ">= 1"
+      results[0].emp_id: 1
+      results[0].depth: 1
+
+  # ---------------------------------------------------------------
+  # get_headcount_by_dept
+  # ---------------------------------------------------------------
+  - name: Get headcount for department 31
+    action: get_headcount
+    input:
+      dept_id: 31
+    expect:
+      count: ">= 1"
+
+  # ---------------------------------------------------------------
+  # get_tenure_years
+  # ---------------------------------------------------------------
+  - name: Get tenure years for employee
+    action: get_tenure
+    input:
+      emp_id: "{{lifecycle_emp.emp_id}}"
+    expect:
+      tenure_years: "> 0"
+
+  # ---------------------------------------------------------------
+  # Terminate then rehire_employee — TERMINATED -> ACTIVE
+  # ---------------------------------------------------------------
+  - name: Terminate the employee
+    action: terminate
+    input:
+      emp_id: "{{lifecycle_emp.emp_id}}"
+      termination_date: "2024-09-30"
+      reason: "VOLUNTARY"
+    expect:
+      employment_status: "TERMINATED"
+
+  - name: Rehire the terminated employee
+    action: rehire
+    input:
+      emp_id: "{{lifecycle_emp.emp_id}}"
+      rehire_date: "2025-01-15"
+      dept_id: 32
+      job_id: 52
+      base_salary: 85000
+    expect:
+      employment_status: "ACTIVE"
+      active_flag: "Y"
+      dept_id: 32
+      job_id: 52
+
+  - name: Verify salary after rehire
+    action: get_current_salary
+    input:
+      emp_id: "{{lifecycle_emp.emp_id}}"
+    expect:
+      base_salary: 85000
+    tolerance:
+      base_salary: 0.01
+
+  - name: Verify rehire recorded in history
+    action: get_history
+    input:
+      emp_id: "{{lifecycle_emp.emp_id}}"
+      change_type: "REHIRE"
+    expect:
+      count: ">= 1"

@@ -1,0 +1,191 @@
+name: payroll-salary-management
+description: Salary records, pay periods, reversal, YTD earnings, payslip, and pay register
+module: payroll
+legacy_package: PKG_PAYROLL
+modern_endpoint: /api/payroll
+
+steps:
+  # ---------------------------------------------------------------
+  # create_salary_record — new salary with end-date of previous
+  # ---------------------------------------------------------------
+  - name: Create initial salary record for employee
+    action: create_salary_record
+    input:
+      emp_id: 34
+      base_salary: 82000
+      effective_date: "2024-01-01"
+      change_reason: "ANNUAL_INCREASE"
+    expect:
+      status: "ACTIVE"
+      base_salary: 82000
+    save_as: salary_record
+    tolerance:
+      base_salary: 0.01
+
+  - name: Create new salary record (should end-date previous)
+    action: create_salary_record
+    input:
+      emp_id: 34
+      base_salary: 88000
+      effective_date: "2024-07-01"
+      change_reason: "MERIT_INCREASE"
+    expect:
+      status: "ACTIVE"
+      base_salary: 88000
+    save_as: new_salary_record
+    tolerance:
+      base_salary: 0.01
+
+  # ---------------------------------------------------------------
+  # get_current_salary
+  # ---------------------------------------------------------------
+  - name: Get current salary for employee
+    action: get_current_salary
+    input:
+      emp_id: 34
+    expect:
+      base_salary: 88000
+    tolerance:
+      base_salary: 0.01
+
+  # ---------------------------------------------------------------
+  # get_salary_as_of — historical salary lookup
+  # ---------------------------------------------------------------
+  - name: Get salary as of previous period
+    action: get_salary_as_of
+    input:
+      emp_id: 34
+      as_of_date: "2024-03-15"
+    expect:
+      base_salary: 82000
+    tolerance:
+      base_salary: 0.01
+
+  # ---------------------------------------------------------------
+  # create_pay_periods — generate monthly and biweekly periods
+  # ---------------------------------------------------------------
+  - name: Create monthly pay periods for fiscal year
+    action: create_pay_periods
+    input:
+      year: 2024
+      frequency: "MONTHLY"
+    expect:
+      period_count: 12
+      first_period_start: "2024-01-01"
+      last_period_end: "2024-12-31"
+    save_as: monthly_periods
+
+  - name: Create biweekly pay periods for fiscal year
+    action: create_pay_periods
+    input:
+      year: 2024
+      frequency: "BIWEEKLY"
+    expect:
+      period_count: ">= 26"
+    save_as: biweekly_periods
+
+  # ---------------------------------------------------------------
+  # close_pay_period
+  # ---------------------------------------------------------------
+  - name: Close a pay period
+    action: close_pay_period
+    input:
+      period_id: "{{monthly_periods.periods[0].period_id}}"
+    expect:
+      status: "CLOSED"
+
+  # ---------------------------------------------------------------
+  # get_ytd_earnings — YTD accumulation
+  # ---------------------------------------------------------------
+  - name: Get YTD earnings for employee
+    action: get_ytd_earnings
+    input:
+      emp_id: 34
+      as_of_date: "2024-06-30"
+    expect:
+      ytd_gross: "> 0"
+      ytd_federal_tax: "> 0"
+      ytd_net: "> 0"
+    tolerance:
+      ytd_gross: 0.01
+      ytd_net: 0.01
+
+  # ---------------------------------------------------------------
+  # reverse_payroll — business-critical reversal
+  # ---------------------------------------------------------------
+  - name: Create payroll run for reversal test
+    action: create_run
+    input:
+      period_id: 2
+      run_type: "REGULAR"
+    expect:
+      status: "PENDING"
+    save_as: reversal_run
+
+  - name: Calculate the payroll run
+    action: calculate
+    input:
+      run_id: "{{reversal_run.run_id}}"
+    expect:
+      status: "CALCULATED"
+    tolerance:
+      total_gross: 0.01
+      total_net: 0.01
+
+  - name: Approve the payroll run
+    action: approve
+    input:
+      run_id: "{{reversal_run.run_id}}"
+    expect:
+      status: "APPROVED"
+
+  - name: Reverse the approved payroll run
+    action: reverse
+    input:
+      run_id: "{{reversal_run.run_id}}"
+      reason: "Calculation error - incorrect period mapping"
+    expect:
+      status: "REVERSED"
+      reversal_run_id: "> 0"
+    save_as: reversed_run
+
+  - name: Verify reversal creates offsetting entries
+    action: get_run_details
+    input:
+      run_id: "{{reversed_run.reversal_run_id}}"
+    expect:
+      run_type: "REVERSAL"
+      total_gross: "< 0"
+      total_net: "< 0"
+    tolerance:
+      total_gross: 0.01
+      total_net: 0.01
+
+  # ---------------------------------------------------------------
+  # get_payslip
+  # ---------------------------------------------------------------
+  - name: Get payslip for employee
+    action: get_payslip
+    input:
+      emp_id: 34
+      period_id: 1
+    expect:
+      emp_id: 34
+      gross_pay: "> 0"
+      net_pay: "> 0"
+      deductions_count: ">= 4"
+    tolerance:
+      gross_pay: 0.01
+      net_pay: 0.01
+
+  # ---------------------------------------------------------------
+  # generate_pay_register — CSV output (migrated from UTL_FILE)
+  # ---------------------------------------------------------------
+  - name: Generate pay register for period
+    action: generate_pay_register
+    input:
+      period_id: 1
+      format: "CSV"
+    expect:
+      file_generated: true
+      record_count: "> 0"

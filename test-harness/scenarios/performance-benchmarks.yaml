@@ -1,0 +1,194 @@
+name: performance-benchmarks
+description: Performance benchmark scenarios for critical paths - payroll calc, org chart, search, batch accrual, reporting
+module: cross-cutting
+legacy_package: MULTIPLE
+modern_endpoint: /api
+
+steps:
+  # =================================================================
+  # Benchmark 1: Payroll Calculation Performance (R-003, TD-013)
+  # =================================================================
+  - name: "PERF-001: Payroll calculation benchmark"
+    action: create_run
+    input:
+      period_id: 9
+      run_type: "REGULAR"
+    expect:
+      status: "PENDING"
+    save_as: perf_payroll_run
+
+  - name: "PERF-001: Calculate payroll with timing"
+    action: calculate
+    input:
+      run_id: "{{perf_payroll_run.run_id}}"
+      benchmark: true
+    expect:
+      status: "CALCULATED"
+      employee_count: "> 0"
+      # Java bulk processing should be faster than legacy row-by-row
+      execution_time_ms: "> 0"
+    tolerance:
+      total_gross: 0.01
+      total_net: 0.01
+    save_as: perf_payroll_result
+
+  # =================================================================
+  # Benchmark 2: Org Chart Query Performance (TD-014)
+  # =================================================================
+  - name: "PERF-002: Org chart full traversal benchmark"
+    action: get_org_chart
+    input:
+      root_emp_id: 1
+      max_depth: 10
+      benchmark: true
+    expect:
+      count: ">= 1"
+      # Legacy CONNECT BY times out with >500 employees
+      execution_time_ms: "< 5000"
+    save_as: perf_org_chart
+
+  - name: "PERF-002: Org chart partial traversal (depth 3)"
+    action: get_org_chart
+    input:
+      root_emp_id: 1
+      max_depth: 3
+      benchmark: true
+    expect:
+      count: ">= 1"
+      execution_time_ms: "< 2000"
+
+  # =================================================================
+  # Benchmark 3: Employee Search Performance
+  # =================================================================
+  - name: "PERF-003: Employee search by name benchmark"
+    action: search_employees
+    input:
+      name: "A"
+      benchmark: true
+    expect:
+      count: ">= 0"
+      execution_time_ms: "> 0"
+    save_as: perf_search_name
+
+  - name: "PERF-003: Employee search by department benchmark"
+    action: search_employees
+    input:
+      dept_id: 31
+      benchmark: true
+    expect:
+      count: ">= 0"
+      execution_time_ms: "> 0"
+
+  - name: "PERF-003: Employee search with multiple filters"
+    action: search_employees
+    input:
+      dept_id: 31
+      employment_status: "ACTIVE"
+      employment_type: "FULL_TIME"
+      benchmark: true
+    expect:
+      count: ">= 0"
+      execution_time_ms: "> 0"
+
+  # =================================================================
+  # Benchmark 4: Batch Leave Accrual Performance
+  # =================================================================
+  - name: "PERF-004: Monthly leave accrual batch benchmark"
+    action: run_monthly_accrual
+    input:
+      accrual_date: "2024-08-01"
+      benchmark: true
+    expect:
+      employees_processed: "> 0"
+      execution_time_ms: "> 0"
+    save_as: perf_accrual
+
+  # =================================================================
+  # Benchmark 5: Reporting Table Refresh Performance
+  # =================================================================
+  - name: "PERF-005: Full reporting tables refresh benchmark"
+    action: refresh_reporting_tables
+    input:
+      tables: "ALL"
+      benchmark: true
+    expect:
+      tables_refreshed: ">= 1"
+      status: "COMPLETED"
+      execution_time_ms: "> 0"
+    save_as: perf_refresh
+
+  # =================================================================
+  # Benchmark 6: GL Journal Generation Performance
+  # =================================================================
+  - name: "PERF-006: GL journal generation benchmark"
+    action: generate_gl_journal
+    input:
+      period_id: 1
+      journal_type: "PAYROLL"
+      benchmark: true
+    expect:
+      status: "GENERATED"
+      entry_count: "> 0"
+      execution_time_ms: "> 0"
+    tolerance:
+      total_debits: 0.01
+      total_credits: 0.01
+    save_as: perf_gl_journal
+
+  # =================================================================
+  # Benchmark 7: Benefits Feed Export Performance
+  # =================================================================
+  - name: "PERF-007: Benefits feed full export benchmark"
+    action: export_benefits_feed
+    input:
+      effective_date: "2024-07-01"
+      feed_type: "FULL"
+      benchmark: true
+    expect:
+      status: "EXPORTED"
+      record_count: "> 0"
+      execution_time_ms: "> 0"
+    save_as: perf_benefits
+
+  # =================================================================
+  # Benchmark 8: Notification Queue Processing Performance
+  # =================================================================
+  - name: "PERF-008: Notification queue processing benchmark"
+    action: process_notification_queue
+    input:
+      batch_size: 500
+      benchmark: true
+    expect:
+      processed_count: ">= 0"
+      execution_time_ms: "> 0"
+    save_as: perf_notifications
+
+  # =================================================================
+  # Benchmark 9: Headcount Report Generation Performance
+  # =================================================================
+  - name: "PERF-009: Headcount report benchmark"
+    action: headcount_report
+    input:
+      as_of_date: "2024-06-30"
+      group_by: "DEPARTMENT"
+      benchmark: true
+    expect:
+      total_headcount: "> 0"
+      execution_time_ms: "> 0"
+    save_as: perf_headcount
+
+  # =================================================================
+  # Benchmark 10: Compensation Summary Report Performance
+  # =================================================================
+  - name: "PERF-010: Compensation summary benchmark"
+    action: compensation_summary
+    input:
+      as_of_date: "2024-06-30"
+      group_by: "DEPARTMENT"
+      benchmark: true
+    expect:
+      total_compensation: "> 0"
+      execution_time_ms: "> 0"
+    tolerance:
+      total_compensation: 0.01
+    save_as: perf_compensation

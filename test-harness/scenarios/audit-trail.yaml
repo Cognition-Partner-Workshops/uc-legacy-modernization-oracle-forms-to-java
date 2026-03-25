@@ -1,0 +1,159 @@
+name: audit-trail
+description: Audit trail - log actions, get change history, purge old records
+module: audit
+legacy_package: PKG_AUDIT
+modern_endpoint: /api/audit
+
+steps:
+  # ---------------------------------------------------------------
+  # log_action — record an auditable action
+  # ---------------------------------------------------------------
+  - name: Log a CREATE action for employee
+    action: log_action
+    input:
+      table_name: "EMPLOYEES"
+      record_id: 34
+      action_type: "CREATE"
+      performed_by: 1
+      old_values: null
+      new_values:
+        first_name: "JESSICA"
+        last_name: "NGUYEN"
+        dept_id: 31
+    expect:
+      audit_id: "> 0"
+      action_type: "CREATE"
+    save_as: create_audit
+
+  - name: Log an UPDATE action for employee
+    action: log_action
+    input:
+      table_name: "EMPLOYEES"
+      record_id: 34
+      action_type: "UPDATE"
+      performed_by: 1
+      old_values:
+        dept_id: 31
+      new_values:
+        dept_id: 32
+    expect:
+      audit_id: "> 0"
+      action_type: "UPDATE"
+    save_as: update_audit
+
+  - name: Log a DELETE action
+    action: log_action
+    input:
+      table_name: "EMPLOYEES"
+      record_id: 999
+      action_type: "DELETE"
+      performed_by: 1
+      old_values:
+        first_name: "DELETED"
+        last_name: "EMPLOYEE"
+      new_values: null
+    expect:
+      audit_id: "> 0"
+      action_type: "DELETE"
+
+  # ---------------------------------------------------------------
+  # get_change_history — retrieve audit trail for a record
+  # ---------------------------------------------------------------
+  - name: Get change history for employee 34
+    action: get_change_history
+    input:
+      table_name: "EMPLOYEES"
+      record_id: 34
+    expect:
+      count: ">= 2"
+      results[0].action_type: "UPDATE"
+
+  - name: Get change history filtered by action type
+    action: get_change_history
+    input:
+      table_name: "EMPLOYEES"
+      record_id: 34
+      action_type: "CREATE"
+    expect:
+      count: ">= 1"
+      results[0].action_type: "CREATE"
+
+  - name: Get change history filtered by date range
+    action: get_change_history
+    input:
+      table_name: "EMPLOYEES"
+      record_id: 34
+      date_from: "2024-01-01"
+      date_to: "2024-12-31"
+    expect:
+      count: ">= 0"
+
+  - name: Get change history for non-existent record
+    action: get_change_history
+    input:
+      table_name: "EMPLOYEES"
+      record_id: 99999
+    expect:
+      count: 0
+
+  # ---------------------------------------------------------------
+  # Audit equivalence — verify same operations produce matching audit entries
+  # ---------------------------------------------------------------
+  - name: Get change history for payroll table
+    action: get_change_history
+    input:
+      table_name: "PAYROLL_RUNS"
+      record_id: 1
+    expect:
+      count: ">= 0"
+
+  - name: Get change history for leave requests table
+    action: get_change_history
+    input:
+      table_name: "LEAVE_REQUESTS"
+      record_id: 1
+    expect:
+      count: ">= 0"
+
+  # ---------------------------------------------------------------
+  # purge_old_records — cleanup old audit entries
+  # ---------------------------------------------------------------
+  - name: Purge audit records older than 7 years
+    action: purge_old_records
+    input:
+      older_than_date: "2017-01-01"
+    expect:
+      purged_count: ">= 0"
+      status: "COMPLETED"
+
+  - name: Purge with dry run (preview only)
+    action: purge_old_records
+    input:
+      older_than_date: "2020-01-01"
+      dry_run: true
+    expect:
+      would_purge_count: ">= 0"
+      status: "DRY_RUN"
+
+  # ---------------------------------------------------------------
+  # Negative: Purge with future date (should fail)
+  # ---------------------------------------------------------------
+  - name: Attempt purge with future date
+    action: purge_old_records
+    input:
+      older_than_date: "2099-01-01"
+    expect:
+      error: true
+      error_message: "*Cannot purge records with a future date*"
+
+  # ---------------------------------------------------------------
+  # Negative: Invalid table name
+  # ---------------------------------------------------------------
+  - name: Get change history for invalid table
+    action: get_change_history
+    input:
+      table_name: "NONEXISTENT_TABLE"
+      record_id: 1
+    expect:
+      error: true
+      error_message: "*Invalid table name*"

@@ -1,0 +1,240 @@
+name: validation-rules
+description: Validation rules - date range, salary grade, email, phone, emp number, required fields
+module: validation
+legacy_package: PKG_VALIDATION
+modern_endpoint: /api/validation
+
+steps:
+  # ---------------------------------------------------------------
+  # validate_date_range
+  # ---------------------------------------------------------------
+  - name: Validate valid date range
+    action: validate_date_range
+    input:
+      start_date: "2024-01-01"
+      end_date: "2024-12-31"
+    expect:
+      valid: true
+
+  - name: Validate same-day date range
+    action: validate_date_range
+    input:
+      start_date: "2024-07-15"
+      end_date: "2024-07-15"
+    expect:
+      valid: true
+
+  - name: Validate invalid date range (end before start)
+    action: validate_date_range
+    input:
+      start_date: "2024-12-31"
+      end_date: "2024-01-01"
+    expect:
+      valid: false
+      error_message: "*End date must be on or after start date*"
+
+  # ---------------------------------------------------------------
+  # validate_salary_for_grade — salary range validation
+  # ---------------------------------------------------------------
+  - name: Validate salary within grade range
+    action: validate_salary_for_grade
+    input:
+      job_id: 50
+      salary: 75000
+    expect:
+      valid: true
+      within_range: true
+
+  - name: Validate salary below grade minimum
+    action: validate_salary_for_grade
+    input:
+      job_id: 50
+      salary: 1000
+    expect:
+      valid: false
+      warning: "*below minimum for grade*"
+
+  - name: Validate salary above grade maximum
+    action: validate_salary_for_grade
+    input:
+      job_id: 50
+      salary: 999999
+    expect:
+      valid: false
+      warning: "*above maximum for grade*"
+
+  # ---------------------------------------------------------------
+  # validate_email_format
+  # ---------------------------------------------------------------
+  - name: Validate standard email
+    action: validate_email_format
+    input:
+      email: "user@company.com"
+    expect:
+      valid: true
+
+  - name: Validate email with subdomain
+    action: validate_email_format
+    input:
+      email: "user@sub.company.com"
+    expect:
+      valid: true
+
+  - name: Validate empty email
+    action: validate_email_format
+    input:
+      email: ""
+    expect:
+      valid: false
+
+  - name: Validate email without domain
+    action: validate_email_format
+    input:
+      email: "user@"
+    expect:
+      valid: false
+
+  - name: Validate email with spaces
+    action: validate_email_format
+    input:
+      email: "user name@company.com"
+    expect:
+      valid: false
+
+  # ---------------------------------------------------------------
+  # validate_phone_format
+  # ---------------------------------------------------------------
+  - name: Validate US phone with dashes
+    action: validate_phone_format
+    input:
+      phone: "312-555-0100"
+    expect:
+      valid: true
+
+  - name: Validate US phone with parentheses
+    action: validate_phone_format
+    input:
+      phone: "(312) 555-0100"
+    expect:
+      valid: true
+
+  - name: Validate US phone - digits only
+    action: validate_phone_format
+    input:
+      phone: "3125550100"
+    expect:
+      valid: true
+
+  - name: Validate phone - too few digits
+    action: validate_phone_format
+    input:
+      phone: "555-01"
+    expect:
+      valid: false
+
+  # ---------------------------------------------------------------
+  # validate_emp_number_format — EMP-NNNNNN format
+  # ---------------------------------------------------------------
+  - name: Validate correct employee number format
+    action: validate_emp_number_format
+    input:
+      emp_number: "EMP-000042"
+    expect:
+      valid: true
+
+  - name: Validate incorrect employee number format - no prefix
+    action: validate_emp_number_format
+    input:
+      emp_number: "000042"
+    expect:
+      valid: false
+
+  - name: Validate incorrect employee number format - wrong prefix
+    action: validate_emp_number_format
+    input:
+      emp_number: "EMPL-000042"
+    expect:
+      valid: false
+
+  - name: Validate incorrect employee number format - non-numeric suffix
+    action: validate_emp_number_format
+    input:
+      emp_number: "EMP-ABCDEF"
+    expect:
+      valid: false
+
+  # ---------------------------------------------------------------
+  # is_future_date
+  # ---------------------------------------------------------------
+  - name: Validate future date returns true
+    action: is_future_date
+    input:
+      date_value: "2099-12-31"
+    expect:
+      is_future: true
+
+  - name: Validate past date returns false
+    action: is_future_date
+    input:
+      date_value: "2020-01-01"
+    expect:
+      is_future: false
+
+  # ---------------------------------------------------------------
+  # is_business_day
+  # ---------------------------------------------------------------
+  - name: Validate Monday is a business day
+    action: is_business_day
+    input:
+      date_value: "2024-07-08"
+    expect:
+      is_business_day: true
+
+  - name: Validate Saturday is not a business day
+    action: is_business_day
+    input:
+      date_value: "2024-07-06"
+    expect:
+      is_business_day: false
+
+  - name: Validate Sunday is not a business day
+    action: is_business_day
+    input:
+      date_value: "2024-07-07"
+    expect:
+      is_business_day: false
+
+  - name: Validate holiday is not a business day
+    action: is_business_day
+    input:
+      date_value: "2024-07-04"
+    expect:
+      is_business_day: false
+
+  # ---------------------------------------------------------------
+  # validate_required_fields
+  # ---------------------------------------------------------------
+  - name: Validate all required fields present
+    action: validate_required_fields
+    input:
+      entity_type: "EMPLOYEE"
+      fields:
+        first_name: "JANE"
+        last_name: "DOE"
+        email: "jane.doe@company.com"
+        hire_date: "2024-01-01"
+        dept_id: 31
+    expect:
+      valid: true
+      missing_fields: []
+
+  - name: Validate with missing required fields
+    action: validate_required_fields
+    input:
+      entity_type: "EMPLOYEE"
+      fields:
+        first_name: "JANE"
+        email: "jane.doe@company.com"
+    expect:
+      valid: false
+      missing_fields: ["last_name", "hire_date", "dept_id"]

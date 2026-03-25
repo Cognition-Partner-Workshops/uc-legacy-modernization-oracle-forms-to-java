@@ -1,0 +1,236 @@
+name: employee-negative-tests
+description: Negative and edge case tests for employee operations
+module: employee
+legacy_package: PKG_EMPLOYEE
+modern_endpoint: /api/employees
+
+steps:
+  # ---------------------------------------------------------------
+  # Invalid department — create with non-existent department
+  # ---------------------------------------------------------------
+  - name: Create employee with invalid department
+    action: create
+    input:
+      first_name: "INVALID"
+      last_name: "DEPT"
+      email: "invalid.dept@company.com"
+      hire_date: "2024-06-01"
+      dept_id: 99999
+      job_id: 50
+    expect:
+      error: true
+      error_code: -20003
+      error_message: "*Invalid or inactive department*"
+
+  # ---------------------------------------------------------------
+  # Invalid manager — create with non-existent manager
+  # ---------------------------------------------------------------
+  - name: Create employee with invalid manager
+    action: create
+    input:
+      first_name: "INVALID"
+      last_name: "MANAGER"
+      email: "invalid.mgr@company.com"
+      hire_date: "2024-06-01"
+      dept_id: 31
+      job_id: 50
+      manager_emp_id: 99999
+    expect:
+      error: true
+      error_code: -20004
+      error_message: "*Invalid or inactive manager*"
+
+  # ---------------------------------------------------------------
+  # Missing required fields — no first name
+  # ---------------------------------------------------------------
+  - name: Create employee without first name
+    action: create
+    input:
+      first_name: null
+      last_name: "NOFIRST"
+      email: "no.first@company.com"
+      hire_date: "2024-06-01"
+      dept_id: 31
+      job_id: 50
+    expect:
+      error: true
+      error_code: -20010
+      error_message: "*First name and last name are required*"
+
+  - name: Create employee without last name
+    action: create
+    input:
+      first_name: "NOLAST"
+      last_name: null
+      email: "no.last@company.com"
+      hire_date: "2024-06-01"
+      dept_id: 31
+      job_id: 50
+    expect:
+      error: true
+      error_code: -20010
+      error_message: "*First name and last name are required*"
+
+  # ---------------------------------------------------------------
+  # Invalid job — create with non-existent job
+  # ---------------------------------------------------------------
+  - name: Create employee with invalid job
+    action: create
+    input:
+      first_name: "INVALID"
+      last_name: "JOB"
+      email: "invalid.job@company.com"
+      hire_date: "2024-06-01"
+      dept_id: 31
+      job_id: 99999
+    expect:
+      error: true
+      error_code: -20011
+      error_message: "*Invalid or inactive job*"
+
+  # ---------------------------------------------------------------
+  # Employee not found — read non-existent
+  # ---------------------------------------------------------------
+  - name: Read non-existent employee
+    action: read
+    input:
+      emp_id: 99999
+    expect:
+      error: true
+      error_code: -20001
+      error_message: "*Employee not found*"
+
+  # ---------------------------------------------------------------
+  # Update non-existent employee
+  # ---------------------------------------------------------------
+  - name: Update non-existent employee
+    action: update
+    input:
+      emp_id: 99999
+      first_name: "GHOST"
+    expect:
+      error: true
+      error_code: -20001
+      error_message: "*Employee not found*"
+
+  # ---------------------------------------------------------------
+  # Transfer terminated employee
+  # ---------------------------------------------------------------
+  - name: Create employee for termination test
+    action: create
+    input:
+      first_name: "TERM"
+      last_name: "TRANSFER"
+      email: "term.transfer@company.com"
+      hire_date: "2024-01-01"
+      dept_id: 31
+      job_id: 50
+      starting_salary: 60000
+    expect:
+      employment_status: "ACTIVE"
+    save_as: term_emp
+
+  - name: Terminate the employee
+    action: terminate
+    input:
+      emp_id: "{{term_emp.emp_id}}"
+      termination_date: "2024-06-30"
+      reason: "VOLUNTARY"
+    expect:
+      employment_status: "TERMINATED"
+
+  - name: Attempt to transfer terminated employee
+    action: transfer
+    input:
+      emp_id: "{{term_emp.emp_id}}"
+      new_dept_id: 32
+      effective_date: "2024-07-01"
+    expect:
+      error: true
+      error_code: -20012
+      error_message: "*Cannot transfer non-active employee*"
+
+  # ---------------------------------------------------------------
+  # Double termination
+  # ---------------------------------------------------------------
+  - name: Attempt to terminate already-terminated employee
+    action: terminate
+    input:
+      emp_id: "{{term_emp.emp_id}}"
+      termination_date: "2024-07-31"
+      reason: "INVOLUNTARY"
+    expect:
+      error: true
+      error_code: -20005
+      error_message: "*already terminated*"
+
+  # ---------------------------------------------------------------
+  # Circular reporting — transfer that creates a manager loop
+  # ---------------------------------------------------------------
+  - name: Create manager employee
+    action: create
+    input:
+      first_name: "MGR"
+      last_name: "CIRCULAR"
+      email: "mgr.circular@company.com"
+      hire_date: "2024-01-01"
+      dept_id: 31
+      job_id: 50
+      starting_salary: 90000
+    expect:
+      employment_status: "ACTIVE"
+    save_as: mgr_emp
+
+  - name: Create subordinate employee reporting to manager
+    action: create
+    input:
+      first_name: "SUB"
+      last_name: "CIRCULAR"
+      email: "sub.circular@company.com"
+      hire_date: "2024-01-01"
+      dept_id: 31
+      job_id: 50
+      manager_emp_id: "{{mgr_emp.emp_id}}"
+      starting_salary: 70000
+    expect:
+      employment_status: "ACTIVE"
+    save_as: sub_emp
+
+  - name: Attempt circular reporting transfer (manager reports to own subordinate)
+    action: transfer
+    input:
+      emp_id: "{{mgr_emp.emp_id}}"
+      new_dept_id: 31
+      new_manager_id: "{{sub_emp.emp_id}}"
+    expect:
+      error: true
+      error_code: -20004
+      error_message: "*Circular reporting chain detected*"
+
+  # ---------------------------------------------------------------
+  # Salary outside grade range (soft warning, not error)
+  # ---------------------------------------------------------------
+  - name: Create employee with salary outside grade range
+    action: create
+    input:
+      first_name: "OVER"
+      last_name: "SALARY"
+      email: "over.salary@company.com"
+      hire_date: "2024-06-01"
+      dept_id: 31
+      job_id: 50
+      starting_salary: 999999
+    expect:
+      employment_status: "ACTIVE"
+      warning: "*outside grade range*"
+
+  # ---------------------------------------------------------------
+  # SQL injection attempt in search (TD-004)
+  # ---------------------------------------------------------------
+  - name: Search with SQL injection attempt
+    action: search
+    input:
+      name: "' OR '1'='1"
+    expect:
+      count: 0
+      error: false

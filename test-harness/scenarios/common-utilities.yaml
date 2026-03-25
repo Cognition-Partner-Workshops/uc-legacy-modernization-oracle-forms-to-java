@@ -1,0 +1,282 @@
+name: common-utilities
+description: Common/shared utilities - logging, parameters, business day calculations, formatting, validation helpers
+module: common
+legacy_package: PKG_COMMON
+modern_endpoint: /api/common
+
+steps:
+  # ---------------------------------------------------------------
+  # business_days_between — core utility used by leave calculations
+  # ---------------------------------------------------------------
+  - name: Business days between two weekdays (Mon-Fri)
+    action: business_days_between
+    input:
+      start_date: "2024-07-08"
+      end_date: "2024-07-12"
+    expect:
+      business_days: 5
+
+  - name: Business days spanning a weekend
+    action: business_days_between
+    input:
+      start_date: "2024-07-08"
+      end_date: "2024-07-15"
+    expect:
+      business_days: 6
+
+  - name: Business days for same day
+    action: business_days_between
+    input:
+      start_date: "2024-07-10"
+      end_date: "2024-07-10"
+    expect:
+      business_days: 1
+
+  - name: Business days spanning multiple weeks
+    action: business_days_between
+    input:
+      start_date: "2024-07-01"
+      end_date: "2024-07-31"
+    expect:
+      business_days: 23
+
+  # ---------------------------------------------------------------
+  # add_business_days
+  # ---------------------------------------------------------------
+  - name: Add business days from Monday
+    action: add_business_days
+    input:
+      start_date: "2024-07-08"
+      days_to_add: 5
+    expect:
+      result_date: "2024-07-12"
+
+  - name: Add business days spanning weekend
+    action: add_business_days
+    input:
+      start_date: "2024-07-11"
+      days_to_add: 3
+    expect:
+      result_date: "2024-07-16"
+
+  - name: Add zero business days
+    action: add_business_days
+    input:
+      start_date: "2024-07-10"
+      days_to_add: 0
+    expect:
+      result_date: "2024-07-10"
+
+  # ---------------------------------------------------------------
+  # get_fiscal_year
+  # ---------------------------------------------------------------
+  - name: Get fiscal year for date in Q1
+    action: get_fiscal_year
+    input:
+      as_of_date: "2024-02-15"
+    expect:
+      fiscal_year: 2024
+
+  - name: Get fiscal year for date in Q4
+    action: get_fiscal_year
+    input:
+      as_of_date: "2024-11-15"
+    expect:
+      fiscal_year: 2024
+
+  # ---------------------------------------------------------------
+  # get_fiscal_quarter
+  # ---------------------------------------------------------------
+  - name: Get fiscal quarter for January
+    action: get_fiscal_quarter
+    input:
+      as_of_date: "2024-01-15"
+    expect:
+      fiscal_quarter: 1
+
+  - name: Get fiscal quarter for June
+    action: get_fiscal_quarter
+    input:
+      as_of_date: "2024-06-15"
+    expect:
+      fiscal_quarter: 2
+
+  - name: Get fiscal quarter for September
+    action: get_fiscal_quarter
+    input:
+      as_of_date: "2024-09-15"
+    expect:
+      fiscal_quarter: 3
+
+  - name: Get fiscal quarter for December
+    action: get_fiscal_quarter
+    input:
+      as_of_date: "2024-12-15"
+    expect:
+      fiscal_quarter: 4
+
+  # ---------------------------------------------------------------
+  # format_currency
+  # ---------------------------------------------------------------
+  - name: Format currency - standard amount
+    action: format_currency
+    input:
+      amount: 75000.50
+      currency_code: "USD"
+    expect:
+      formatted: "$75,000.50"
+
+  - name: Format currency - zero
+    action: format_currency
+    input:
+      amount: 0
+      currency_code: "USD"
+    expect:
+      formatted: "$0.00"
+
+  - name: Format currency - negative
+    action: format_currency
+    input:
+      amount: -1500.75
+      currency_code: "USD"
+    expect:
+      formatted: "-$1,500.75"
+
+  # ---------------------------------------------------------------
+  # format_date
+  # ---------------------------------------------------------------
+  - name: Format date to display format
+    action: format_date
+    input:
+      date_value: "2024-07-15"
+      format: "MM/DD/YYYY"
+    expect:
+      formatted: "07/15/2024"
+
+  - name: Format date to long format
+    action: format_date
+    input:
+      date_value: "2024-07-15"
+      format: "MONTH DD, YYYY"
+    expect:
+      formatted: "July 15, 2024"
+
+  # ---------------------------------------------------------------
+  # format_phone
+  # ---------------------------------------------------------------
+  - name: Format phone number
+    action: format_phone
+    input:
+      phone: "3125550100"
+    expect:
+      formatted: "(312) 555-0100"
+
+  # ---------------------------------------------------------------
+  # format_ssn (masked)
+  # ---------------------------------------------------------------
+  - name: Format SSN masked
+    action: format_ssn
+    input:
+      ssn: "123456789"
+      masked: true
+    expect:
+      formatted: "***-**-6789"
+
+  # ---------------------------------------------------------------
+  # is_valid_email
+  # ---------------------------------------------------------------
+  - name: Validate valid email address
+    action: is_valid_email
+    input:
+      email: "jane.doe@company.com"
+    expect:
+      valid: true
+
+  - name: Validate invalid email - no @ sign
+    action: is_valid_email
+    input:
+      email: "jane.doe.company.com"
+    expect:
+      valid: false
+
+  - name: Validate invalid email - no domain
+    action: is_valid_email
+    input:
+      email: "jane.doe@"
+    expect:
+      valid: false
+
+  # ---------------------------------------------------------------
+  # is_valid_phone
+  # ---------------------------------------------------------------
+  - name: Validate valid phone number
+    action: is_valid_phone
+    input:
+      phone: "312-555-0100"
+    expect:
+      valid: true
+
+  - name: Validate invalid phone - too short
+    action: is_valid_phone
+    input:
+      phone: "555"
+    expect:
+      valid: false
+
+  # ---------------------------------------------------------------
+  # is_valid_date
+  # ---------------------------------------------------------------
+  - name: Validate valid date
+    action: is_valid_date
+    input:
+      date_value: "2024-07-15"
+    expect:
+      valid: true
+
+  - name: Validate invalid date - Feb 30
+    action: is_valid_date
+    input:
+      date_value: "2024-02-30"
+    expect:
+      valid: false
+
+  # ---------------------------------------------------------------
+  # get_param — system parameter lookup
+  # ---------------------------------------------------------------
+  - name: Get system parameter value
+    action: get_param
+    input:
+      param_name: "MAX_LEAVE_CARRYOVER_DAYS"
+    expect:
+      param_value: "> 0"
+
+  - name: Get non-existent parameter
+    action: get_param
+    input:
+      param_name: "NONEXISTENT_PARAM"
+    expect:
+      param_value: null
+
+  # ---------------------------------------------------------------
+  # log_error / log_info — application logging
+  # ---------------------------------------------------------------
+  - name: Log an error message
+    action: log_error
+    input:
+      module: "TEST"
+      procedure: "test_scenario"
+      error_code: -20999
+      error_message: "Test error logging"
+    expect:
+      logged: true
+      log_id: "> 0"
+
+  - name: Log an info message
+    action: log_info
+    input:
+      module: "TEST"
+      procedure: "test_scenario"
+      message: "Test info logging"
+    expect:
+      logged: true
+      log_id: "> 0"

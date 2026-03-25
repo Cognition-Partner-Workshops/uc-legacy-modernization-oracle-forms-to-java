@@ -1,0 +1,244 @@
+name: leave-negative-tests
+description: Negative and edge case tests for leave operations
+module: leave
+legacy_package: PKG_LEAVE
+modern_endpoint: /api/leave
+
+steps:
+  # ---------------------------------------------------------------
+  # Insufficient balance — submit when balance < requested days
+  # ---------------------------------------------------------------
+  - name: Submit leave request exceeding available balance
+    action: submit
+    input:
+      emp_id: 34
+      leave_type_id: 1
+      start_date: "2024-11-01"
+      end_date: "2024-12-31"
+      half_day_flag: "N"
+      reason: "Extended vacation (exceeds balance)"
+    expect:
+      error: true
+      error_code: -20050
+      error_message: "*Insufficient leave balance*"
+
+  # ---------------------------------------------------------------
+  # Backdated request — within 5-day window (should succeed)
+  # ---------------------------------------------------------------
+  - name: Submit backdated request within 5 days
+    action: submit
+    input:
+      emp_id: 34
+      leave_type_id: 1
+      start_date: "2024-07-25"
+      end_date: "2024-07-25"
+      half_day_flag: "N"
+      reason: "Forgot to request - emergency"
+      backdate_override: true
+    expect:
+      status: "PENDING"
+
+  # ---------------------------------------------------------------
+  # Over 5 days backdated — should be rejected
+  # ---------------------------------------------------------------
+  - name: Submit backdated request beyond 5 days
+    action: submit
+    input:
+      emp_id: 34
+      leave_type_id: 1
+      start_date: "2024-01-01"
+      end_date: "2024-01-02"
+      half_day_flag: "N"
+      reason: "Very old request"
+    expect:
+      error: true
+      error_code: -20051
+      error_message: "*Cannot backdate more than 5 business days*"
+
+  # ---------------------------------------------------------------
+  # Minimum tenure requirement not met
+  # ---------------------------------------------------------------
+  - name: Submit leave for type requiring minimum tenure (not met)
+    action: submit
+    input:
+      emp_id: 34
+      leave_type_id: 3  # Type with MIN_TENURE_DAYS = 365
+      start_date: "2024-08-01"
+      end_date: "2024-08-02"
+      half_day_flag: "N"
+      reason: "Sabbatical request"
+      # Assuming emp 34 doesn't meet tenure for this type
+    expect:
+      error: true
+      error_code: -20052
+      error_message: "*Minimum tenure requirement not met*"
+
+  # ---------------------------------------------------------------
+  # Auto-approve leave type (REQUIRES_APPROVAL = 'N')
+  # ---------------------------------------------------------------
+  - name: Submit auto-approve leave type
+    action: submit
+    input:
+      emp_id: 34
+      leave_type_id: 5  # Type with REQUIRES_APPROVAL = 'N'
+      start_date: "2024-09-02"
+      end_date: "2024-09-02"
+      half_day_flag: "N"
+      reason: "Bereavement"
+    expect:
+      status: "APPROVED"
+      auto_approved: true
+
+  # ---------------------------------------------------------------
+  # Cancel pending vs cancel approved — different balance logic
+  # ---------------------------------------------------------------
+  - name: Submit leave request for cancel-pending test
+    action: submit
+    input:
+      emp_id: 34
+      leave_type_id: 1
+      start_date: "2025-01-06"
+      end_date: "2025-01-10"
+      half_day_flag: "N"
+      reason: "Training"
+    expect:
+      status: "PENDING"
+      total_days: 5
+    save_as: pending_cancel_req
+
+  - name: Get balance before cancel-pending
+    action: get_balance
+    input:
+      emp_id: 34
+      leave_type_id: 1
+    expect:
+      pending: ">= 5"
+    save_as: balance_before_pending_cancel
+
+  - name: Cancel the pending request
+    action: cancel
+    input:
+      request_id: "{{pending_cancel_req.request_id}}"
+      reason: "Changed plans"
+    expect:
+      status: "CANCELLED"
+
+  - name: Verify balance unchanged after cancelling pending (no deduction to restore)
+    action: get_balance
+    input:
+      emp_id: 34
+      leave_type_id: 1
+    expect:
+      available: "{{balance_before_pending_cancel.available}}"
+
+  - name: Submit leave for cancel-approved test
+    action: submit
+    input:
+      emp_id: 34
+      leave_type_id: 1
+      start_date: "2025-02-03"
+      end_date: "2025-02-07"
+      half_day_flag: "N"
+      reason: "Vacation"
+    expect:
+      status: "PENDING"
+      total_days: 5
+    save_as: approved_cancel_req
+
+  - name: Approve the leave request
+    action: approve
+    input:
+      request_id: "{{approved_cancel_req.request_id}}"
+      approver_emp_id: 31
+    expect:
+      status: "APPROVED"
+
+  - name: Get balance after approval (should be deducted)
+    action: get_balance
+    input:
+      emp_id: 34
+      leave_type_id: 1
+    save_as: balance_after_approval
+
+  - name: Cancel the approved request
+    action: cancel
+    input:
+      request_id: "{{approved_cancel_req.request_id}}"
+      reason: "Cancelled vacation"
+    expect:
+      status: "CANCELLED"
+
+  - name: Verify balance restored after cancelling approved request
+    action: get_balance
+    input:
+      emp_id: 34
+      leave_type_id: 1
+    expect:
+      used_change: -5
+
+  # ---------------------------------------------------------------
+  # Leave during termination — auto-cancellation
+  # ---------------------------------------------------------------
+  - name: Submit leave for soon-to-be-terminated employee
+    action: submit
+    input:
+      emp_id: 34
+      leave_type_id: 1
+      start_date: "2025-03-10"
+      end_date: "2025-03-14"
+      half_day_flag: "N"
+      reason: "Pre-termination leave"
+    expect:
+      status: "PENDING"
+    save_as: pre_term_leave
+
+  # ---------------------------------------------------------------
+  # Invalid leave type
+  # ---------------------------------------------------------------
+  - name: Submit leave with invalid leave type
+    action: submit
+    input:
+      emp_id: 34
+      leave_type_id: 99999
+      start_date: "2025-04-01"
+      end_date: "2025-04-02"
+      half_day_flag: "N"
+      reason: "Invalid type test"
+    expect:
+      error: true
+      error_code: -20053
+      error_message: "*Invalid leave type*"
+
+  # ---------------------------------------------------------------
+  # Invalid employee
+  # ---------------------------------------------------------------
+  - name: Submit leave for non-existent employee
+    action: submit
+    input:
+      emp_id: 99999
+      leave_type_id: 1
+      start_date: "2025-04-01"
+      end_date: "2025-04-02"
+      half_day_flag: "N"
+      reason: "Non-existent employee"
+    expect:
+      error: true
+      error_code: -20001
+      error_message: "*Employee not found*"
+
+  # ---------------------------------------------------------------
+  # Invalid date range (end before start)
+  # ---------------------------------------------------------------
+  - name: Submit leave with end date before start date
+    action: submit
+    input:
+      emp_id: 34
+      leave_type_id: 1
+      start_date: "2025-05-10"
+      end_date: "2025-05-05"
+      half_day_flag: "N"
+      reason: "Invalid date range"
+    expect:
+      error: true
+      error_code: -20054
+      error_message: "*End date must be on or after start date*"

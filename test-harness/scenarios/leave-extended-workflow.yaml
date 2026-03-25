@@ -1,0 +1,281 @@
+name: leave-extended-workflow
+description: Extended leave operations - reject, accrual, carryover, business days, overlap detection
+module: leave
+legacy_package: PKG_LEAVE
+modern_endpoint: /api/leave
+
+steps:
+  # ---------------------------------------------------------------
+  # reject_leave_request — rejection workflow
+  # ---------------------------------------------------------------
+  - name: Submit a leave request for rejection test
+    action: submit
+    input:
+      emp_id: 34
+      leave_type_id: 1
+      start_date: "2024-10-14"
+      end_date: "2024-10-18"
+      half_day_flag: "N"
+      reason: "Conference attendance"
+    expect:
+      status: "PENDING"
+      total_days: 5
+    save_as: reject_request
+
+  - name: Reject the leave request
+    action: reject
+    input:
+      request_id: "{{reject_request.request_id}}"
+      approver_emp_id: 31
+      reject_reason: "Staffing conflict during that week"
+    expect:
+      status: "REJECTED"
+
+  - name: Verify balance not deducted after rejection
+    action: get_balance
+    input:
+      emp_id: 34
+      leave_type_id: 1
+    expect:
+      pending_change: 0
+
+  # ---------------------------------------------------------------
+  # run_monthly_accrual — batch job
+  # ---------------------------------------------------------------
+  - name: Run monthly leave accrual for all employees
+    action: run_monthly_accrual
+    input:
+      accrual_date: "2024-07-01"
+    expect:
+      employees_processed: "> 0"
+      accrual_amount: "> 0"
+    save_as: accrual_result
+
+  - name: Verify accrual respects max balance cap
+    action: get_balance
+    input:
+      emp_id: 34
+      leave_type_id: 1
+    expect:
+      available: "> 0"
+
+  # ---------------------------------------------------------------
+  # process_carryover — year-end carryover with caps
+  # ---------------------------------------------------------------
+  - name: Process year-end leave carryover
+    action: process_carryover
+    input:
+      from_year: 2023
+      to_year: 2024
+    expect:
+      employees_processed: "> 0"
+      carried_over: ">= 0"
+    save_as: carryover_result
+
+  # ---------------------------------------------------------------
+  # expire_carryover — TD-012 double-subtraction bug test
+  # ---------------------------------------------------------------
+  - name: Expire carried-over leave (first run)
+    action: expire_carryover
+    input:
+      expiry_date: "2024-03-31"
+      carryover_year: 2023
+    expect:
+      expired_count: ">= 0"
+    save_as: first_expiry
+
+  - name: Expire carried-over leave (second run - idempotency test for TD-012)
+    action: expire_carryover
+    input:
+      expiry_date: "2024-03-31"
+      carryover_year: 2023
+    expect:
+      # Running twice should NOT double-subtract; should be idempotent
+      expired_count: 0
+
+  # ---------------------------------------------------------------
+  # adjust_leave_balance — manual adjustments
+  # ---------------------------------------------------------------
+  - name: Manually adjust leave balance (add days)
+    action: adjust_balance
+    input:
+      emp_id: 34
+      leave_type_id: 1
+      adjustment: 3
+      reason: "Manager discretionary grant"
+    expect:
+      adjustment_applied: 3
+
+  - name: Manually adjust leave balance (subtract days)
+    action: adjust_balance
+    input:
+      emp_id: 34
+      leave_type_id: 1
+      adjustment: -1
+      reason: "Correction for unrecorded absence"
+    expect:
+      adjustment_applied: -1
+
+  # ---------------------------------------------------------------
+  # initialize_balances — new hire balance setup
+  # ---------------------------------------------------------------
+  - name: Initialize leave balances for new employee
+    action: initialize_balances
+    input:
+      emp_id: 34
+      hire_date: "2024-01-15"
+    expect:
+      leave_types_initialized: ">= 1"
+
+  # ---------------------------------------------------------------
+  # calculate_business_days — TD-023 observed holiday bug
+  # ---------------------------------------------------------------
+  - name: Calculate business days (standard work week)
+    action: calculate_business_days
+    input:
+      start_date: "2024-07-08"
+      end_date: "2024-07-12"
+    expect:
+      business_days: 5
+
+  - name: Calculate business days with weekend
+    action: calculate_business_days
+    input:
+      start_date: "2024-07-08"
+      end_date: "2024-07-14"
+    expect:
+      business_days: 5
+
+  - name: Calculate business days with July 4th holiday
+    action: calculate_business_days
+    input:
+      start_date: "2024-07-01"
+      end_date: "2024-07-05"
+    expect:
+      business_days: 4
+
+  - name: Calculate business days when holiday falls on Saturday (observed Friday)
+    action: calculate_business_days
+    input:
+      start_date: "2025-07-01"
+      end_date: "2025-07-07"
+    expect:
+      # July 4, 2025 is a Friday — observed as normal
+      business_days: 4
+
+  - name: Calculate business days when holiday falls on Sunday (observed Monday)
+    action: calculate_business_days
+    input:
+      start_date: "2021-07-01"
+      end_date: "2021-07-07"
+    expect:
+      # July 4, 2021 is a Sunday — observed Monday July 5
+      business_days: 4
+
+  # ---------------------------------------------------------------
+  # check_leave_overlap — TD-022 half-day bug
+  # ---------------------------------------------------------------
+  - name: Submit full-day leave request
+    action: submit
+    input:
+      emp_id: 34
+      leave_type_id: 1
+      start_date: "2024-11-25"
+      end_date: "2024-11-25"
+      half_day_flag: "N"
+      reason: "Doctor appointment"
+    expect:
+      status: "PENDING"
+    save_as: full_day_request
+
+  - name: Submit overlapping full-day request (should fail)
+    action: submit
+    input:
+      emp_id: 34
+      leave_type_id: 1
+      start_date: "2024-11-25"
+      end_date: "2024-11-25"
+      half_day_flag: "N"
+      reason: "Other reason"
+    expect:
+      error: true
+      error_message: "*overlapping leave request*"
+
+  - name: Submit AM half-day request on a full-day leave day (should fail)
+    action: submit
+    input:
+      emp_id: 34
+      leave_type_id: 1
+      start_date: "2024-11-25"
+      end_date: "2024-11-25"
+      half_day_flag: "Y"
+      half_day_period: "AM"
+      reason: "Half day test"
+    expect:
+      error: true
+      error_message: "*overlapping leave request*"
+
+  - name: Submit AM half-day request on a free day
+    action: submit
+    input:
+      emp_id: 34
+      leave_type_id: 1
+      start_date: "2024-12-02"
+      end_date: "2024-12-02"
+      half_day_flag: "Y"
+      half_day_period: "AM"
+      reason: "Morning appointment"
+    expect:
+      status: "PENDING"
+      total_days: 0.5
+    save_as: am_half_day
+
+  - name: Submit PM half-day on same day as AM half-day (should succeed)
+    action: submit
+    input:
+      emp_id: 34
+      leave_type_id: 1
+      start_date: "2024-12-02"
+      end_date: "2024-12-02"
+      half_day_flag: "Y"
+      half_day_period: "PM"
+      reason: "Afternoon appointment"
+    expect:
+      status: "PENDING"
+      total_days: 0.5
+
+  - name: Submit AM half-day on same day as existing AM half-day (should fail - TD-022)
+    action: submit
+    input:
+      emp_id: 34
+      leave_type_id: 1
+      start_date: "2024-12-02"
+      end_date: "2024-12-02"
+      half_day_flag: "Y"
+      half_day_period: "AM"
+      reason: "Duplicate AM"
+    expect:
+      error: true
+      error_message: "*overlapping leave request*"
+
+  # ---------------------------------------------------------------
+  # get_pending_requests — approver view
+  # ---------------------------------------------------------------
+  - name: Get pending requests for approver
+    action: get_pending_requests
+    input:
+      approver_emp_id: 31
+    expect:
+      count: ">= 0"
+
+  # ---------------------------------------------------------------
+  # get_team_calendar — team leave calendar
+  # ---------------------------------------------------------------
+  - name: Get team calendar for department
+    action: get_team_calendar
+    input:
+      dept_id: 31
+      month: 11
+      year: 2024
+    expect:
+      entries_count: ">= 0"

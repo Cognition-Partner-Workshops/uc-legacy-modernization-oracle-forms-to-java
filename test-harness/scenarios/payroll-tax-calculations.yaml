@@ -1,0 +1,228 @@
+name: payroll-tax-calculations
+description: Standalone tax calculation tests for penny-for-penny equivalence (R-010)
+module: payroll
+legacy_package: PKG_PAYROLL
+modern_endpoint: /api/payroll
+
+steps:
+  # ---------------------------------------------------------------
+  # Federal Tax — SINGLE filer, standard bracket
+  # ---------------------------------------------------------------
+  - name: Calculate federal tax for SINGLE filer - $50,000 annual
+    action: calculate_federal_tax
+    input:
+      annual_salary: 50000
+      filing_status: "SINGLE"
+      allowances: 1
+      pay_frequency: "MONTHLY"
+    expect:
+      federal_tax: "> 0"
+    tolerance:
+      federal_tax: 0.01
+    save_as: fed_tax_single_50k
+
+  # ---------------------------------------------------------------
+  # Federal Tax — MARRIED_JOINT filer
+  # ---------------------------------------------------------------
+  - name: Calculate federal tax for MARRIED_JOINT filer - $120,000 annual
+    action: calculate_federal_tax
+    input:
+      annual_salary: 120000
+      filing_status: "MARRIED_JOINT"
+      allowances: 2
+      pay_frequency: "MONTHLY"
+    expect:
+      federal_tax: "> 0"
+    tolerance:
+      federal_tax: 0.01
+    save_as: fed_tax_married_120k
+
+  # ---------------------------------------------------------------
+  # Federal Tax — MARRIED_SEPARATE filer
+  # ---------------------------------------------------------------
+  - name: Calculate federal tax for MARRIED_SEPARATE filer - $90,000 annual
+    action: calculate_federal_tax
+    input:
+      annual_salary: 90000
+      filing_status: "MARRIED_SEPARATE"
+      allowances: 1
+      pay_frequency: "BIWEEKLY"
+    expect:
+      federal_tax: "> 0"
+    tolerance:
+      federal_tax: 0.01
+
+  # ---------------------------------------------------------------
+  # Federal Tax — High earner (top bracket)
+  # ---------------------------------------------------------------
+  - name: Calculate federal tax for high earner - $500,000 annual
+    action: calculate_federal_tax
+    input:
+      annual_salary: 500000
+      filing_status: "SINGLE"
+      allowances: 0
+      pay_frequency: "MONTHLY"
+    expect:
+      federal_tax: "> 0"
+    tolerance:
+      federal_tax: 0.01
+
+  # ---------------------------------------------------------------
+  # Federal Tax — Low earner (below standard deduction)
+  # ---------------------------------------------------------------
+  - name: Calculate federal tax for low earner - $12,000 annual
+    action: calculate_federal_tax
+    input:
+      annual_salary: 12000
+      filing_status: "SINGLE"
+      allowances: 1
+      pay_frequency: "MONTHLY"
+    expect:
+      federal_tax: 0
+    tolerance:
+      federal_tax: 0.01
+
+  # ---------------------------------------------------------------
+  # State Tax — Illinois (flat rate)
+  # ---------------------------------------------------------------
+  - name: Calculate state tax for Illinois
+    action: calculate_state_tax
+    input:
+      annual_salary: 75000
+      state_code: "IL"
+      pay_frequency: "MONTHLY"
+    expect:
+      state_tax: "> 0"
+    tolerance:
+      state_tax: 0.01
+
+  # ---------------------------------------------------------------
+  # State Tax — California (progressive)
+  # ---------------------------------------------------------------
+  - name: Calculate state tax for California
+    action: calculate_state_tax
+    input:
+      annual_salary: 75000
+      state_code: "CA"
+      pay_frequency: "MONTHLY"
+    expect:
+      state_tax: "> 0"
+    tolerance:
+      state_tax: 0.01
+
+  # ---------------------------------------------------------------
+  # State Tax — Texas (no state income tax)
+  # ---------------------------------------------------------------
+  - name: Calculate state tax for Texas (no state tax)
+    action: calculate_state_tax
+    input:
+      annual_salary: 75000
+      state_code: "TX"
+      pay_frequency: "MONTHLY"
+    expect:
+      state_tax: 0
+    tolerance:
+      state_tax: 0.01
+
+  # ---------------------------------------------------------------
+  # State Tax — New York
+  # ---------------------------------------------------------------
+  - name: Calculate state tax for New York
+    action: calculate_state_tax
+    input:
+      annual_salary: 100000
+      state_code: "NY"
+      pay_frequency: "BIWEEKLY"
+    expect:
+      state_tax: "> 0"
+    tolerance:
+      state_tax: 0.01
+
+  # ---------------------------------------------------------------
+  # FICA — Standard calculation (below wage base)
+  # ---------------------------------------------------------------
+  - name: Calculate FICA for standard salary
+    action: calculate_fica
+    input:
+      gross_pay: 6250.00
+      ytd_gross: 50000.00
+      pay_frequency: "MONTHLY"
+    expect:
+      social_security: "> 0"
+      employee_rate: 0.062
+    tolerance:
+      social_security: 0.01
+
+  # ---------------------------------------------------------------
+  # FICA — At the Social Security wage base cap ($168,600)
+  # ---------------------------------------------------------------
+  - name: Calculate FICA when crossing wage base cap
+    action: calculate_fica
+    input:
+      gross_pay: 10000.00
+      ytd_gross: 165000.00
+      pay_frequency: "MONTHLY"
+    expect:
+      social_security: "> 0"
+      # Only $3,600 of the $10,000 should be subject to SS tax
+      capped: true
+    tolerance:
+      social_security: 0.01
+
+  # ---------------------------------------------------------------
+  # FICA — Above the wage base (no more SS tax)
+  # ---------------------------------------------------------------
+  - name: Calculate FICA when already above wage base
+    action: calculate_fica
+    input:
+      gross_pay: 10000.00
+      ytd_gross: 180000.00
+      pay_frequency: "MONTHLY"
+    expect:
+      social_security: 0
+    tolerance:
+      social_security: 0.01
+
+  # ---------------------------------------------------------------
+  # Medicare — Standard calculation
+  # ---------------------------------------------------------------
+  - name: Calculate Medicare for standard salary
+    action: calculate_medicare
+    input:
+      gross_pay: 6250.00
+      ytd_gross: 50000.00
+      pay_frequency: "MONTHLY"
+    expect:
+      medicare_tax: "> 0"
+      employee_rate: 0.0145
+    tolerance:
+      medicare_tax: 0.01
+
+  # ---------------------------------------------------------------
+  # Medicare — Additional Medicare Tax for high earners ($200K threshold)
+  # ---------------------------------------------------------------
+  - name: Calculate Additional Medicare Tax crossing threshold
+    action: calculate_medicare
+    input:
+      gross_pay: 15000.00
+      ytd_gross: 195000.00
+      pay_frequency: "MONTHLY"
+    expect:
+      medicare_tax: "> 0"
+      additional_medicare: true
+      # $5,000 over the $200K threshold is subject to extra 0.9% tax
+    tolerance:
+      medicare_tax: 0.01
+
+  - name: Calculate Additional Medicare Tax fully above threshold
+    action: calculate_medicare
+    input:
+      gross_pay: 25000.00
+      ytd_gross: 250000.00
+      pay_frequency: "MONTHLY"
+    expect:
+      medicare_tax: "> 0"
+      additional_medicare: true
+      # Entire $25,000 is subject to both 1.45% + 0.9%
+    tolerance:
+      medicare_tax: 0.01

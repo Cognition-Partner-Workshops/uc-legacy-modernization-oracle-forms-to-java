@@ -1,0 +1,158 @@
+name: payroll-negative-tests
+description: Negative and edge case tests for payroll operations
+module: payroll
+legacy_package: PKG_PAYROLL
+modern_endpoint: /api/payroll
+
+steps:
+  # ---------------------------------------------------------------
+  # Closed period — create run on closed pay period
+  # ---------------------------------------------------------------
+  - name: Attempt to create payroll run on closed period
+    action: create_run
+    input:
+      period_id: 999
+      run_type: "REGULAR"
+    expect:
+      error: true
+      error_code: -20030
+      error_message: "*Period is closed or invalid*"
+
+  # ---------------------------------------------------------------
+  # Approve non-CALCULATED run — status guard
+  # ---------------------------------------------------------------
+  - name: Create a payroll run
+    action: create_run
+    input:
+      period_id: 3
+      run_type: "REGULAR"
+    expect:
+      status: "PENDING"
+    save_as: pending_run
+
+  - name: Attempt to approve a PENDING run (not calculated)
+    action: approve
+    input:
+      run_id: "{{pending_run.run_id}}"
+    expect:
+      error: true
+      error_code: -20031
+      error_message: "*Cannot approve run that is not CALCULATED*"
+
+  # ---------------------------------------------------------------
+  # Double approval
+  # ---------------------------------------------------------------
+  - name: Calculate the run
+    action: calculate
+    input:
+      run_id: "{{pending_run.run_id}}"
+    expect:
+      status: "CALCULATED"
+    tolerance:
+      total_gross: 0.01
+      total_net: 0.01
+
+  - name: Approve the calculated run
+    action: approve
+    input:
+      run_id: "{{pending_run.run_id}}"
+    expect:
+      status: "APPROVED"
+
+  - name: Attempt to re-approve an already approved run
+    action: approve
+    input:
+      run_id: "{{pending_run.run_id}}"
+    expect:
+      error: true
+      error_code: -20031
+      error_message: "*Cannot approve run that is not CALCULATED*"
+
+  # ---------------------------------------------------------------
+  # Calculate already-approved run
+  # ---------------------------------------------------------------
+  - name: Attempt to recalculate an approved run
+    action: calculate
+    input:
+      run_id: "{{pending_run.run_id}}"
+    expect:
+      error: true
+      error_code: -20032
+      error_message: "*Cannot calculate run that is not PENDING*"
+
+  # ---------------------------------------------------------------
+  # Reverse a non-approved run
+  # ---------------------------------------------------------------
+  - name: Create another payroll run
+    action: create_run
+    input:
+      period_id: 4
+      run_type: "REGULAR"
+    expect:
+      status: "PENDING"
+    save_as: non_approved_run
+
+  - name: Attempt to reverse a non-approved run
+    action: reverse
+    input:
+      run_id: "{{non_approved_run.run_id}}"
+      reason: "Test reversal"
+    expect:
+      error: true
+      error_code: -20033
+      error_message: "*Can only reverse APPROVED payroll runs*"
+
+  # ---------------------------------------------------------------
+  # Non-existent payroll run
+  # ---------------------------------------------------------------
+  - name: Get details for non-existent run
+    action: get_run_details
+    input:
+      run_id: 99999
+    expect:
+      error: true
+      error_code: -20034
+      error_message: "*Payroll run not found*"
+
+  # ---------------------------------------------------------------
+  # Multiple filing statuses — different pay frequencies
+  # ---------------------------------------------------------------
+  - name: Create WEEKLY frequency payroll run
+    action: create_run
+    input:
+      period_id: 5
+      run_type: "REGULAR"
+      pay_frequency: "WEEKLY"
+    expect:
+      status: "PENDING"
+      run_type: "REGULAR"
+    save_as: weekly_run
+
+  - name: Create SEMIMONTHLY frequency payroll run
+    action: create_run
+    input:
+      period_id: 6
+      run_type: "REGULAR"
+      pay_frequency: "SEMIMONTHLY"
+    expect:
+      status: "PENDING"
+      run_type: "REGULAR"
+
+  # ---------------------------------------------------------------
+  # Overtime calculation with holidays (TD-021)
+  # ---------------------------------------------------------------
+  - name: Calculate payroll with overtime during holiday week
+    action: calculate_with_overtime
+    input:
+      emp_id: 34
+      period_start: "2024-07-01"
+      period_end: "2024-07-07"
+      regular_hours: 40
+      overtime_hours: 8
+      holiday_date: "2024-07-04"
+    expect:
+      # Holiday hours should NOT count toward overtime threshold
+      overtime_pay: "> 0"
+      holiday_excluded: true
+    tolerance:
+      overtime_pay: 0.01

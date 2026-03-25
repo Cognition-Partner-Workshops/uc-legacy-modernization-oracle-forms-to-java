@@ -1,0 +1,190 @@
+name: performance-reviews
+description: Performance review cycle management, reviews, goals, and assessments
+module: performance
+legacy_package: PKG_PERFORMANCE
+modern_endpoint: /api/performance
+
+steps:
+  # ---------------------------------------------------------------
+  # create_review_cycle
+  # ---------------------------------------------------------------
+  - name: Create annual review cycle
+    action: create_review_cycle
+    input:
+      cycle_name: "2024 Annual Performance Review"
+      cycle_type: "ANNUAL"
+      start_date: "2024-01-01"
+      end_date: "2024-12-31"
+      review_deadline: "2025-01-31"
+    expect:
+      status: "DRAFT"
+      cycle_type: "ANNUAL"
+    save_as: review_cycle
+
+  # ---------------------------------------------------------------
+  # open_review_cycle
+  # ---------------------------------------------------------------
+  - name: Open the review cycle
+    action: open_review_cycle
+    input:
+      cycle_id: "{{review_cycle.cycle_id}}"
+    expect:
+      status: "OPEN"
+
+  # ---------------------------------------------------------------
+  # generate_reviews_for_cycle — bulk create reviews for all eligible employees
+  # ---------------------------------------------------------------
+  - name: Generate reviews for all eligible employees in cycle
+    action: generate_reviews
+    input:
+      cycle_id: "{{review_cycle.cycle_id}}"
+    expect:
+      reviews_created: "> 0"
+    save_as: generated_reviews
+
+  # ---------------------------------------------------------------
+  # create_review — individual review
+  # ---------------------------------------------------------------
+  - name: Create individual performance review
+    action: create_review
+    input:
+      cycle_id: "{{review_cycle.cycle_id}}"
+      emp_id: 34
+      reviewer_emp_id: 31
+    expect:
+      status: "PENDING"
+    save_as: perf_review
+
+  # ---------------------------------------------------------------
+  # add_goal — goal setting
+  # ---------------------------------------------------------------
+  - name: Add a performance goal
+    action: add_goal
+    input:
+      review_id: "{{perf_review.review_id}}"
+      goal_title: "Complete Spring Boot migration for PKG_EMPLOYEE"
+      goal_description: "Migrate all PKG_EMPLOYEE procedures to Spring Boot REST APIs with full test coverage"
+      weight: 30
+      target_date: "2024-09-30"
+    expect:
+      goal_id: "> 0"
+      status: "ACTIVE"
+    save_as: goal_1
+
+  - name: Add a second performance goal
+    action: add_goal
+    input:
+      review_id: "{{perf_review.review_id}}"
+      goal_title: "Reduce payroll processing time by 50%"
+      goal_description: "Optimize batch payroll calculation to process within SLA"
+      weight: 25
+      target_date: "2024-12-31"
+    expect:
+      goal_id: "> 0"
+      status: "ACTIVE"
+    save_as: goal_2
+
+  # ---------------------------------------------------------------
+  # update_goal_progress
+  # ---------------------------------------------------------------
+  - name: Update goal progress to 50%
+    action: update_goal_progress
+    input:
+      goal_id: "{{goal_1.goal_id}}"
+      progress_pct: 50
+      notes: "Completed CRUD operations, working on transfer and search"
+    expect:
+      progress_pct: 50
+
+  - name: Update goal progress to 100% (completed)
+    action: update_goal_progress
+    input:
+      goal_id: "{{goal_1.goal_id}}"
+      progress_pct: 100
+      notes: "All procedures migrated and tested"
+    expect:
+      progress_pct: 100
+      status: "COMPLETED"
+
+  # ---------------------------------------------------------------
+  # submit_self_assessment
+  # ---------------------------------------------------------------
+  - name: Submit self-assessment
+    action: submit_self_assessment
+    input:
+      review_id: "{{perf_review.review_id}}"
+      self_rating: 4
+      self_comments: "Successfully migrated PKG_EMPLOYEE module ahead of schedule. Payroll optimization in progress."
+    expect:
+      self_assessment_status: "SUBMITTED"
+
+  # ---------------------------------------------------------------
+  # submit_manager_review
+  # ---------------------------------------------------------------
+  - name: Submit manager review
+    action: submit_manager_review
+    input:
+      review_id: "{{perf_review.review_id}}"
+      manager_rating: 4
+      manager_comments: "Strong technical execution. Exceeded expectations on migration timeline."
+      overall_rating: "EXCEEDS_EXPECTATIONS"
+    expect:
+      manager_review_status: "SUBMITTED"
+      overall_rating: "EXCEEDS_EXPECTATIONS"
+
+  # ---------------------------------------------------------------
+  # acknowledge_review — employee acknowledgment
+  # ---------------------------------------------------------------
+  - name: Employee acknowledges the review
+    action: acknowledge_review
+    input:
+      review_id: "{{perf_review.review_id}}"
+      emp_id: 34
+      acknowledged: true
+      comments: "I agree with the assessment."
+    expect:
+      status: "ACKNOWLEDGED"
+
+  # ---------------------------------------------------------------
+  # get_team_reviews — manager view
+  # ---------------------------------------------------------------
+  - name: Get team reviews for manager
+    action: get_team_reviews
+    input:
+      manager_emp_id: 31
+      cycle_id: "{{review_cycle.cycle_id}}"
+    expect:
+      count: ">= 1"
+
+  # ---------------------------------------------------------------
+  # get_rating_distribution — analytics
+  # ---------------------------------------------------------------
+  - name: Get rating distribution for cycle
+    action: get_rating_distribution
+    input:
+      cycle_id: "{{review_cycle.cycle_id}}"
+    expect:
+      total_reviews: ">= 1"
+
+  # ---------------------------------------------------------------
+  # close_review_cycle
+  # ---------------------------------------------------------------
+  - name: Close the review cycle
+    action: close_review_cycle
+    input:
+      cycle_id: "{{review_cycle.cycle_id}}"
+    expect:
+      status: "CLOSED"
+
+  # ---------------------------------------------------------------
+  # Negative: Submit review for closed cycle
+  # ---------------------------------------------------------------
+  - name: Attempt to create review in closed cycle
+    action: create_review
+    input:
+      cycle_id: "{{review_cycle.cycle_id}}"
+      emp_id: 35
+      reviewer_emp_id: 31
+    expect:
+      error: true
+      error_message: "*Review cycle is closed*"

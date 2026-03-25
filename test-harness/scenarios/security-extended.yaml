@@ -1,0 +1,245 @@
+name: security-extended
+description: Extended security tests - change password, session validity, SSN encryption, account lockout
+module: security
+legacy_package: PKG_SECURITY
+modern_endpoint: /api/auth
+
+steps:
+  # ---------------------------------------------------------------
+  # Setup: Authenticate to get a session
+  # ---------------------------------------------------------------
+  - name: Authenticate for session tests
+    action: login
+    input:
+      username: "james.richardson@company.com"
+      password: "test_password_123"
+    expect:
+      success: true
+      session_valid: true
+    save_as: auth_session
+
+  # ---------------------------------------------------------------
+  # change_password — complexity rules + migration from MD5 to BCrypt
+  # ---------------------------------------------------------------
+  - name: Change password with valid new password
+    action: change_password
+    input:
+      emp_id: 1
+      old_password: "test_password_123"
+      new_password: "NewSecure1Pass!"
+    expect:
+      success: true
+
+  - name: Verify login with new password
+    action: login
+    input:
+      username: "james.richardson@company.com"
+      password: "NewSecure1Pass!"
+    expect:
+      success: true
+
+  - name: Change password back to original for test cleanup
+    action: change_password
+    input:
+      emp_id: 1
+      old_password: "NewSecure1Pass!"
+      new_password: "test_password_123"
+    expect:
+      success: true
+
+  # ---------------------------------------------------------------
+  # Password complexity failures
+  # ---------------------------------------------------------------
+  - name: Change password - too short (< 8 chars)
+    action: change_password
+    input:
+      emp_id: 1
+      old_password: "test_password_123"
+      new_password: "Ab1!"
+    expect:
+      error: true
+      error_code: -20060
+      error_message: "*Password must be at least 8 characters*"
+
+  - name: Change password - no uppercase letter
+    action: change_password
+    input:
+      emp_id: 1
+      old_password: "test_password_123"
+      new_password: "alllowercase123"
+    expect:
+      error: true
+      error_code: -20061
+      error_message: "*Password must contain at least one uppercase letter*"
+
+  - name: Change password - no number
+    action: change_password
+    input:
+      emp_id: 1
+      old_password: "test_password_123"
+      new_password: "NoNumbersHere!"
+    expect:
+      error: true
+      error_code: -20062
+      error_message: "*Password must contain at least one number*"
+
+  - name: Change password with wrong old password
+    action: change_password
+    input:
+      emp_id: 1
+      old_password: "wrong_old_password"
+      new_password: "ValidNew1Pass!"
+    expect:
+      error: true
+      error_code: -20063
+      error_message: "*Current password is incorrect*"
+
+  # ---------------------------------------------------------------
+  # is_session_valid — session timeout (30-min)
+  # ---------------------------------------------------------------
+  - name: Verify current session is valid
+    action: is_session_valid
+    input:
+      session_id: "{{auth_session.session_id}}"
+    expect:
+      valid: true
+
+  - name: Verify expired/invalid session returns false
+    action: is_session_valid
+    input:
+      session_id: "INVALID-SESSION-ID-12345"
+    expect:
+      valid: false
+
+  # ---------------------------------------------------------------
+  # encrypt_ssn / decrypt_ssn — roundtrip (TD-003)
+  # ---------------------------------------------------------------
+  - name: Encrypt SSN
+    action: encrypt_ssn
+    input:
+      ssn: "123-45-6789"
+    expect:
+      encrypted: true
+      encrypted_value: "!= 123-45-6789"
+    save_as: encrypted_ssn
+
+  - name: Decrypt SSN and verify roundtrip
+    action: decrypt_ssn
+    input:
+      encrypted_value: "{{encrypted_ssn.encrypted_value}}"
+    expect:
+      ssn: "123-45-6789"
+
+  # ---------------------------------------------------------------
+  # Account lockout — TD-002 (legacy has no lockout; Java must add it)
+  # ---------------------------------------------------------------
+  - name: Failed login attempt 1
+    action: login
+    input:
+      username: "james.richardson@company.com"
+      password: "wrong_password_1"
+    expect:
+      success: false
+
+  - name: Failed login attempt 2
+    action: login
+    input:
+      username: "james.richardson@company.com"
+      password: "wrong_password_2"
+    expect:
+      success: false
+
+  - name: Failed login attempt 3
+    action: login
+    input:
+      username: "james.richardson@company.com"
+      password: "wrong_password_3"
+    expect:
+      success: false
+
+  - name: Failed login attempt 4
+    action: login
+    input:
+      username: "james.richardson@company.com"
+      password: "wrong_password_4"
+    expect:
+      success: false
+
+  - name: Failed login attempt 5 (should trigger lockout)
+    action: login
+    input:
+      username: "james.richardson@company.com"
+      password: "wrong_password_5"
+    expect:
+      success: false
+      account_locked: true
+
+  - name: Login with correct password after lockout (should be denied)
+    action: login
+    input:
+      username: "james.richardson@company.com"
+      password: "test_password_123"
+    expect:
+      success: false
+      error_message: "*Account is locked*"
+
+  # ---------------------------------------------------------------
+  # Concurrent sessions
+  # ---------------------------------------------------------------
+  - name: Login first session
+    action: login
+    input:
+      username: "james.richardson@company.com"
+      password: "test_password_123"
+    expect:
+      success: true
+      session_valid: true
+    save_as: session_1
+
+  - name: Login second session (concurrent)
+    action: login
+    input:
+      username: "james.richardson@company.com"
+      password: "test_password_123"
+    expect:
+      success: true
+      session_valid: true
+    save_as: session_2
+
+  - name: Verify both sessions are valid (or first is invalidated per policy)
+    action: is_session_valid
+    input:
+      session_id: "{{session_1.session_id}}"
+    expect:
+      # Behavior depends on policy - document what the system does
+      valid: true
+
+  # ---------------------------------------------------------------
+  # Permission checks — additional module/action combinations
+  # ---------------------------------------------------------------
+  - name: Check HR permission for employee module
+    action: check_permission
+    input:
+      emp_id: 1
+      module: "EMPLOYEE"
+      action: "CREATE"
+    expect:
+      has_permission: true
+
+  - name: Check regular user cannot create employees
+    action: check_permission
+    input:
+      emp_id: 37
+      module: "EMPLOYEE"
+      action: "CREATE"
+    expect:
+      has_permission: false
+
+  - name: Check permission for non-existent module
+    action: check_permission
+    input:
+      emp_id: 1
+      module: "NONEXISTENT"
+      action: "VIEW"
+    expect:
+      has_permission: false
