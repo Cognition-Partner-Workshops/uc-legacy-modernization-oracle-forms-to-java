@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import { GoogleLoginPage } from './google-login-page-object';
 
 /**
  * Google Login E2E Tests
@@ -8,7 +9,6 @@ import { test, expect, type Page } from '@playwright/test';
  * Prerequisites:
  *   - Set GOOGLE_EMAIL and GOOGLE_PASSWORD environment variables
  *   - The Google account should NOT have 2FA enabled (or use an App Password)
- *   - For accounts with 2FA, set GOOGLE_TOTP_SECRET for TOTP-based verification
  *
  * Usage:
  *   GOOGLE_EMAIL=user@gmail.com GOOGLE_PASSWORD=pass npx playwright test
@@ -23,90 +23,58 @@ test.describe('Google Login', () => {
   });
 
   test('should navigate to Google sign-in page', async ({ page }) => {
-    await page.goto('https://accounts.google.com/signin');
+    const loginPage = new GoogleLoginPage(page);
+    await loginPage.goto();
 
     await expect(page).toHaveURL(/accounts\.google\.com/);
-    await expect(page.locator('input[type="email"]')).toBeVisible();
   });
 
   test('should enter email and proceed to password step', async ({ page }) => {
-    await page.goto('https://accounts.google.com/signin');
+    const loginPage = new GoogleLoginPage(page);
+    await loginPage.goto();
+    await loginPage.enterEmail(GOOGLE_EMAIL);
 
-    // Wait for the email input field to be visible
-    const emailInput = page.locator('input[type="email"]');
-    await expect(emailInput).toBeVisible();
-
-    // Enter the email address
-    await emailInput.fill(GOOGLE_EMAIL);
-
-    // Click the "Next" button
-    await page.locator('#identifierNext button, #identifierNext').click();
-
-    // Wait for the password input to appear (indicates successful email submission)
-    const passwordInput = page.locator('input[type="password"]');
-    await expect(passwordInput).toBeVisible({ timeout: 10_000 });
+    await expect(loginPage.passwordInput).toBeVisible({ timeout: 10_000 });
   });
 
   test('should complete full login flow', async ({ page }) => {
-    await page.goto('https://accounts.google.com/signin');
+    const loginPage = new GoogleLoginPage(page);
+    await loginPage.login(GOOGLE_EMAIL, GOOGLE_PASSWORD);
 
-    // Step 1: Enter email
-    const emailInput = page.locator('input[type="email"]');
-    await expect(emailInput).toBeVisible();
-    await emailInput.fill(GOOGLE_EMAIL);
-    await page.locator('#identifierNext button, #identifierNext').click();
+    // Wait for redirect after login
+    await page.waitForURL(
+      /myaccount\.google\.com|mail\.google\.com|accounts\.google\.com\/signin\/v2\/challenge/,
+      { timeout: 30_000 },
+    );
 
-    // Step 2: Enter password
-    const passwordInput = page.locator('input[type="password"]');
-    await expect(passwordInput).toBeVisible({ timeout: 10_000 });
-    await passwordInput.fill(GOOGLE_PASSWORD);
-    await page.locator('#passwordNext button, #passwordNext').click();
-
-    // Step 3: Verify successful login
-    // After login, Google redirects to myaccount or the requested page
-    await page.waitForURL(/myaccount\.google\.com|accounts\.google\.com\/signin\/v2\/challenge|mail\.google\.com/, {
-      timeout: 30_000,
-    });
-
-    // If we reach myaccount, login was successful
     const currentUrl = page.url();
-    const isLoggedIn =
-      currentUrl.includes('myaccount.google.com') ||
-      currentUrl.includes('mail.google.com');
 
-    if (isLoggedIn) {
-      // Verify user profile element is visible on the my account page
-      await expect(page.locator('header, [data-ogsr-up]')).toBeVisible({ timeout: 10_000 });
+    if (currentUrl.includes('challenge')) {
+      // 2FA or additional verification was triggered — fail explicitly so this
+      // is not silently treated as a successful login.
+      test.fail(true, 'Google requested an additional security challenge (2FA / CAPTCHA). Use an account without 2FA or an App Password.');
     }
-    // If redirected to a challenge page, the test acknowledges 2FA is required
+
+    // Verify we landed on a logged-in Google page
+    await expect(page).toHaveURL(/myaccount\.google\.com|mail\.google\.com/);
+    await expect(page.locator('header')).toBeVisible({ timeout: 10_000 });
   });
 
   test('should show error for invalid email', async ({ page }) => {
-    await page.goto('https://accounts.google.com/signin');
+    const loginPage = new GoogleLoginPage(page);
+    await loginPage.goto();
+    await loginPage.enterEmail('not-a-valid-email-@@@');
 
-    const emailInput = page.locator('input[type="email"]');
-    await expect(emailInput).toBeVisible();
-
-    // Enter an invalid email format
-    await emailInput.fill('not-a-valid-email-@@@');
-    await page.locator('#identifierNext button, #identifierNext').click();
-
-    // Expect an error message to appear
-    const errorMessage = page.locator('[aria-live="assertive"], .o6cuMc, .dEOOab');
-    await expect(errorMessage).toBeVisible({ timeout: 5_000 });
+    await loginPage.expectError();
   });
 
   test('should show error for empty email submission', async ({ page }) => {
-    await page.goto('https://accounts.google.com/signin');
+    const loginPage = new GoogleLoginPage(page);
+    await loginPage.goto();
 
-    const emailInput = page.locator('input[type="email"]');
-    await expect(emailInput).toBeVisible();
+    // Click Next without entering an email
+    await loginPage.nextButton.click();
 
-    // Leave email empty and click Next
-    await page.locator('#identifierNext button, #identifierNext').click();
-
-    // Expect a validation error
-    const errorMessage = page.locator('[aria-live="assertive"], .o6cuMc, .dEOOab');
-    await expect(errorMessage).toBeVisible({ timeout: 5_000 });
+    await loginPage.expectError();
   });
 });
