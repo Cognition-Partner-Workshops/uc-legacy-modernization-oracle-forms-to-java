@@ -19,14 +19,14 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
         .group_by(Certificate.status)
         .all()
     )
-    status_map = {s: c for s, c in status_counts}
+    status_map = {str(s): c for s, c in status_counts}
 
     type_counts = (
         db.query(Certificate.certificate_type, func.count(Certificate.id))
         .group_by(Certificate.certificate_type)
         .all()
     )
-    by_type = {(t.value if hasattr(t, "value") else str(t)): c for t, c in type_counts}
+    by_type = {str(t): c for t, c in type_counts}
 
     env_counts = (
         db.query(Certificate.environment, func.count(Certificate.id))
@@ -68,12 +68,12 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
 
     return DashboardStats(
         total_certificates=total,
-        valid_count=status_map.get(CertificateStatus.VALID, 0),
-        expiring_soon_count=status_map.get(CertificateStatus.EXPIRING_SOON, 0),
-        critical_count=status_map.get(CertificateStatus.CRITICAL, 0),
-        expired_count=status_map.get(CertificateStatus.EXPIRED, 0),
-        unknown_count=status_map.get(CertificateStatus.UNKNOWN, 0),
-        error_count=status_map.get(CertificateStatus.ERROR, 0),
+        valid_count=status_map.get(CertificateStatus.VALID.value, 0),
+        expiring_soon_count=status_map.get(CertificateStatus.EXPIRING_SOON.value, 0),
+        critical_count=status_map.get(CertificateStatus.CRITICAL.value, 0),
+        expired_count=status_map.get(CertificateStatus.EXPIRED.value, 0),
+        unknown_count=status_map.get(CertificateStatus.UNKNOWN.value, 0),
+        error_count=status_map.get(CertificateStatus.ERROR.value, 0),
         by_type=by_type,
         by_environment=by_environment,
         recent_incidents=incidents_list,
@@ -85,14 +85,14 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
 def get_type_breakdown(db: Session = Depends(get_db)):
     results = []
     for cert_type in CertificateType:
-        certs = db.query(Certificate).filter(Certificate.certificate_type == cert_type).all()
+        certs = db.query(Certificate).filter(Certificate.certificate_type == cert_type.value).all()
         breakdown = TypeBreakdown(
             certificate_type=cert_type,
             total=len(certs),
-            valid=sum(1 for c in certs if c.status == CertificateStatus.VALID),
-            expiring_soon=sum(1 for c in certs if c.status == CertificateStatus.EXPIRING_SOON),
-            critical=sum(1 for c in certs if c.status == CertificateStatus.CRITICAL),
-            expired=sum(1 for c in certs if c.status == CertificateStatus.EXPIRED),
+            valid=sum(1 for c in certs if c.status == CertificateStatus.VALID.value),
+            expiring_soon=sum(1 for c in certs if c.status == CertificateStatus.EXPIRING_SOON.value),
+            critical=sum(1 for c in certs if c.status == CertificateStatus.CRITICAL.value),
+            expired=sum(1 for c in certs if c.status == CertificateStatus.EXPIRED.value),
         )
         results.append(breakdown)
     return results

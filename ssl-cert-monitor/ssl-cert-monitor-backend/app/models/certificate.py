@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, DateTime, Enum, Text, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean
 from app.database import Base
 
 
@@ -28,8 +28,8 @@ class Certificate(Base):
     name = Column(String(255), nullable=False)
     hostname = Column(String(512), nullable=False)
     port = Column(Integer, default=443)
-    certificate_type = Column(Enum(CertificateType), nullable=False)
-    status = Column(Enum(CertificateStatus), default=CertificateStatus.UNKNOWN)
+    certificate_type = Column(String(50), nullable=False)
+    status = Column(String(50), default=CertificateStatus.UNKNOWN.value)
 
     # Certificate details
     issuer = Column(String(512), nullable=True)

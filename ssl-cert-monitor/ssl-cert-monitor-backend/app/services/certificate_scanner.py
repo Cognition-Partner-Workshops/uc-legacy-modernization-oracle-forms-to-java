@@ -24,7 +24,7 @@ def fetch_ssl_certificate_info(hostname: str, port: int = 443, timeout: int = 10
         "issued_date": None,
         "expiry_date": None,
         "days_until_expiry": None,
-        "status": CertificateStatus.UNKNOWN,
+        "status": CertificateStatus.UNKNOWN.value,
         "error": None,
     }
 
@@ -37,7 +37,7 @@ def fetch_ssl_certificate_info(hostname: str, port: int = 443, timeout: int = 10
             with context.wrap_socket(sock, server_hostname=hostname) as ssock:
                 der_cert = ssock.getpeercert(binary_form=True)
                 if der_cert is None:
-                    result["status"] = CertificateStatus.ERROR
+                    result["status"] = CertificateStatus.ERROR.value
                     result["error"] = "No certificate returned by server"
                     return result
 
@@ -70,28 +70,28 @@ def fetch_ssl_certificate_info(hostname: str, port: int = 443, timeout: int = 10
                 result["days_until_expiry"] = delta.days
 
                 if delta.days < 0:
-                    result["status"] = CertificateStatus.EXPIRED
+                    result["status"] = CertificateStatus.EXPIRED.value
                 elif delta.days <= EXPIRY_CRITICAL_DAYS:
-                    result["status"] = CertificateStatus.CRITICAL
+                    result["status"] = CertificateStatus.CRITICAL.value
                 elif delta.days <= EXPIRY_WARNING_DAYS:
-                    result["status"] = CertificateStatus.EXPIRING_SOON
+                    result["status"] = CertificateStatus.EXPIRING_SOON.value
                 else:
-                    result["status"] = CertificateStatus.VALID
+                    result["status"] = CertificateStatus.VALID.value
 
     except socket.timeout:
-        result["status"] = CertificateStatus.ERROR
+        result["status"] = CertificateStatus.ERROR.value
         result["error"] = f"Connection timed out to {hostname}:{port}"
         logger.warning("Timeout connecting to %s:%d", hostname, port)
     except socket.gaierror:
-        result["status"] = CertificateStatus.ERROR
+        result["status"] = CertificateStatus.ERROR.value
         result["error"] = f"DNS resolution failed for {hostname}"
         logger.warning("DNS resolution failed for %s", hostname)
     except ConnectionRefusedError:
-        result["status"] = CertificateStatus.ERROR
+        result["status"] = CertificateStatus.ERROR.value
         result["error"] = f"Connection refused to {hostname}:{port}"
         logger.warning("Connection refused to %s:%d", hostname, port)
     except Exception as e:
-        result["status"] = CertificateStatus.ERROR
+        result["status"] = CertificateStatus.ERROR.value
         result["error"] = str(e)
         logger.error("Error scanning %s:%d - %s", hostname, port, str(e))
 
@@ -126,7 +126,7 @@ def scan_all_certificates(db: Session) -> list[Certificate]:
             results.append(updated)
         except Exception as e:
             logger.error("Error scanning certificate %s: %s", cert.name, str(e))
-            cert.status = CertificateStatus.ERROR
+            cert.status = CertificateStatus.ERROR.value
             cert.last_checked = datetime.now(timezone.utc)
             db.commit()
             results.append(cert)
