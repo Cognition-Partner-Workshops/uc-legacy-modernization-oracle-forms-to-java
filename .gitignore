@@ -29,3 +29,7 @@ comparison-report.json
 
 # Docker
 *.env
+ssl-cert-monitor/ssl-cert-monitor-backend/ssl_certificates.db
+ssl-cert-monitor/ssl-cert-monitor-frontend/node_modules/
+ssl-cert-monitor/ssl-cert-monitor-frontend/dist/
+ssl-cert-monitor/ssl-cert-monitor-frontend/.env
