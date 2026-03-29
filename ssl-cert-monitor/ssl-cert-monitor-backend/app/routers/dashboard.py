@@ -19,14 +19,14 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
         .group_by(Certificate.status)
         .all()
     )
-    status_map = {str(s): c for s, c in status_counts}
+    status_map = {s: c for s, c in status_counts}
 
     type_counts = (
         db.query(Certificate.certificate_type, func.count(Certificate.id))
         .group_by(Certificate.certificate_type)
         .all()
     )
-    by_type = {str(t.value): c for t, c in type_counts}
+    by_type = {(t.value if hasattr(t, "value") else str(t)): c for t, c in type_counts}
 
     env_counts = (
         db.query(Certificate.environment, func.count(Certificate.id))
