@@ -383,6 +383,9 @@ export class ActionMapper {
     // Convert VBScript InStr function calls (handles nested parens like DataTable(...))
     cond = ActionMapper.convertInStr(cond);
 
+    // Convert VBScript built-in functions (Mid, Trim, Left, Len, Environment, etc.)
+    cond = ActionMapper.convertVbsBuiltinFunctions(cond);
+
     cond = cond.replace(/\bAnd\b/gi, '&&');
     cond = cond.replace(/\bOr\b/gi, '||');
     cond = cond.replace(/\bNot\b/gi, '!');
@@ -515,6 +518,123 @@ export class ActionMapper {
         }
       }
     }
+    return result;
+  }
+
+  /**
+   * Convert VBScript built-in functions to TypeScript equivalents.
+   * Handles Mid, Trim, Left, Right, Len, LCase, UCase, Replace, CStr, CInt, CDbl,
+   * IsEmpty, IsNull, IsNumeric, Split, Join, Asc, Chr, LTrim, RTrim, Now, Date.
+   * Also converts Environment references to process.env.
+   */
+  static convertVbsBuiltinFunctions(expr: string): string {
+    // Define converters: VBS function name -> (args) => TS equivalent
+    const converters: Record<string, (args: string[]) => string> = {
+      'Mid': (args) => {
+        if (args.length >= 3) return `(${args[0]}).substring(${args[1]} - 1, ${args[1]} - 1 + ${args[2]})`;
+        if (args.length === 2) return `(${args[0]}).substring(${args[1]} - 1)`;
+        return `Mid(${args.join(', ')})`;
+      },
+      'Trim': (args) => `(${args[0]}).trim()`,
+      'LTrim': (args) => `(${args[0]}).trimStart()`,
+      'RTrim': (args) => `(${args[0]}).trimEnd()`,
+      'Left': (args) => args.length >= 2 ? `(${args[0]}).substring(0, ${args[1]})` : `Left(${args.join(', ')})`,
+      'Right': (args) => args.length >= 2 ? `(${args[0]}).slice(-(${args[1]}))` : `Right(${args.join(', ')})`,
+      'Len': (args) => `(${args[0]}).length`,
+      'LCase': (args) => `(${args[0]}).toLowerCase()`,
+      'UCase': (args) => `(${args[0]}).toUpperCase()`,
+      'CStr': (args) => `String(${args[0]})`,
+      'CInt': (args) => `parseInt(${args[0]}, 10)`,
+      'CLng': (args) => `parseInt(${args[0]}, 10)`,
+      'CDbl': (args) => `parseFloat(${args[0]})`,
+      'CSng': (args) => `parseFloat(${args[0]})`,
+      'CBool': (args) => `Boolean(${args[0]})`,
+      'IsEmpty': (args) => `(${args[0]} === '' || ${args[0]} === undefined)`,
+      'IsNull': (args) => `(${args[0]} === null)`,
+      'IsNumeric': (args) => `!isNaN(Number(${args[0]}))`,
+      'Replace': (args) => {
+        if (args.length >= 3) return `(${args[0]}).replace(new RegExp(${args[1]}, 'g'), ${args[2]})`;
+        return `Replace(${args.join(', ')})`;
+      },
+      'Split': (args) => {
+        if (args.length >= 2) return `(${args[0]}).split(${args[1]})`;
+        return `(${args[0]}).split(',')`;
+      },
+      'Join': (args) => {
+        if (args.length >= 2) return `(${args[0]}).join(${args[1]})`;
+        return `(${args[0]}).join(' ')`;
+      },
+      'Asc': (args) => `(${args[0]}).charCodeAt(0)`,
+      'Chr': (args) => `String.fromCharCode(${args[0]})`,
+      'StrComp': (args) => args.length >= 2 ? `(${args[0]}).localeCompare(${args[1]})` : `StrComp(${args.join(', ')})`,
+      'Space': (args) => `' '.repeat(${args[0]})`,
+      'String': (args) => args.length >= 2 ? `(${args[1]}).repeat(${args[0]})` : `String(${args[0]})`,
+      'FormatNumber': (args) => args.length >= 2 ? `Number(${args[0]}).toFixed(${args[1]})` : `Number(${args[0]}).toFixed(2)`,
+    };
+
+    let result = expr;
+
+    // Convert Environment references: Environment("name") or Environment.Value("name")
+    result = result.replace(/Environment\.Value\s*\(\s*"([^"]*)"\s*\)/gi, "process.env['$1'] || ''");
+    result = result.replace(/Environment\.Value\s*\(\s*'([^']*)'\s*\)/gi, "process.env['$1'] || ''");
+    result = result.replace(/Environment\s*\(\s*"([^"]*)"\s*\)/gi, "process.env['$1'] || ''");
+    result = result.replace(/Environment\s*\(\s*'([^']*)'\s*\)/gi, "process.env['$1'] || ''");
+
+    // Convert standalone VBS keywords
+    result = result.replace(/\bNow\b/g, 'new Date()');
+    result = result.replace(/\bvbCrLf\b/gi, "'\\n'");
+    result = result.replace(/\bvbTab\b/gi, "'\\t'");
+    result = result.replace(/\bvbNewLine\b/gi, "'\\n'");
+    result = result.replace(/\bvbNullString\b/gi, "''");
+
+    // Process each built-in function
+    for (const [funcName, converter] of Object.entries(converters)) {
+      // Use case-insensitive matching for the function name
+      const funcRegex = new RegExp(`\\b${funcName}\\s*\\(`, 'gi');
+      let match;
+      while ((match = funcRegex.exec(result)) !== null) {
+        const funcStart = match.index;
+        const argsStart = funcStart + match[0].length;
+
+        // Find matching closing paren
+        let depth = 1;
+        let i = argsStart;
+        while (i < result.length && depth > 0) {
+          if (result[i] === '(') depth++;
+          else if (result[i] === ')') depth--;
+          i++;
+        }
+        if (depth !== 0) continue; // unmatched parens, skip
+        const argsEnd = i - 1;
+        const argsStr = result.substring(argsStart, argsEnd);
+
+        // Split args at top-level commas (not inside nested parens or strings)
+        const args: string[] = [];
+        let argDepth = 0;
+        let inStr = false;
+        let argStart = 0;
+        for (let j = 0; j < argsStr.length; j++) {
+          const ch = argsStr[j];
+          if (ch === '"' && !inStr) inStr = true;
+          else if (ch === '"' && inStr) inStr = false;
+          else if (!inStr && ch === '(') argDepth++;
+          else if (!inStr && ch === ')') argDepth--;
+          else if (!inStr && argDepth === 0 && ch === ',') {
+            args.push(argsStr.substring(argStart, j).trim());
+            argStart = j + 1;
+          }
+        }
+        args.push(argsStr.substring(argStart).trim());
+
+        const replacement = converter(args);
+        const original = result.substring(funcStart, argsEnd + 1);
+        result = result.substring(0, funcStart) + replacement + result.substring(argsEnd + 1);
+
+        // Reset regex to account for changed string length
+        funcRegex.lastIndex = funcStart + replacement.length;
+      }
+    }
+
     return result;
   }
 

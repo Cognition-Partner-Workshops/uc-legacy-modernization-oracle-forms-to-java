@@ -562,12 +562,45 @@ export class ConverterEngine {
       trimmed = this.stripVbsInlineComment(trimmed);
       if (!trimmed) continue;
 
+      // Handle multi-statement lines (VBScript : separator)
+      // Split by : outside strings and process each sub-statement
+      if (this.hasMultiStatementSeparator(trimmed)) {
+        const subStatements = this.splitVbsStatements(trimmed);
+        for (const sub of subStatements) {
+          const subTrimmed = sub.trim();
+          if (subTrimmed) {
+            const subLines = this.convertFunctionBody(subTrimmed, functionName);
+            for (const sl of subLines) {
+              tsLines.push(sl);
+            }
+          }
+        }
+        continue;
+      }
+
       // Dim declarations - initialize with empty string to avoid TS2454
       if (/^\s*Dim\s+/i.test(trimmed)) {
         const vars = trimmed.replace(/^\s*Dim\s+/i, '').split(',').map(v => v.trim());
         for (const v of vars) {
           tsLines.push(`let ${v} = '';`);
           declaredVars.add(v.toLowerCase());
+        }
+        continue;
+      }
+
+      // Set varName = expression (VBScript object creation / assignment)
+      const setMatch = trimmed.match(/^\s*Set\s+(\w+)\s*=\s*(.+)/i);
+      if (setMatch) {
+        const setVarName = setMatch[1];
+        let setValue = setMatch[2].trim();
+        // Convert CreateObject to stub or comment
+        setValue = this.convertVbsStringExpression(setValue);
+        setValue = ActionMapper.convertVbsBuiltinFunctions(setValue);
+        if (declaredVars.has(setVarName.toLowerCase())) {
+          tsLines.push(`${setVarName} = ${setValue};`);
+        } else {
+          tsLines.push(`let ${setVarName}: any = ${setValue};`);
+          declaredVars.add(setVarName.toLowerCase());
         }
         continue;
       }
@@ -596,12 +629,13 @@ export class ConverterEngine {
       // If...Then (generic)
       if (/^If\s+(.+)\s+Then\s*$/i.test(trimmed)) {
         let cond = trimmed.replace(/^If\s+/i, '').replace(/\s+Then\s*$/i, '');
+        cond = ActionMapper.convertInStr(cond);
+        cond = ActionMapper.convertVbsBuiltinFunctions(cond);
         cond = cond.replace(/\bAnd\b/gi, '&&').replace(/\bOr\b/gi, '||');
         cond = cond.replace(/\bNot\b/gi, '!').replace(/<>/g, '!==');
         cond = cond.replace(/\bMod\b/gi, '%').replace(/\bIs\b/gi, '===');
         cond = cond.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
         cond = cond.replace(/\bNothing\b/gi, 'null').replace(/\bEmpty\b/gi, "''");
-        cond = ActionMapper.convertInStr(cond);
         // Fix single = to === for comparisons (but not assignments), respecting string literals
         cond = ConverterEngine.replaceEqualsOutsideStrings(cond);
         // Integer division \ -> Math.floor division
@@ -615,12 +649,13 @@ export class ConverterEngine {
       // ElseIf
       if (/^ElseIf\s+(.+)\s+Then\s*$/i.test(trimmed)) {
         let cond = trimmed.replace(/^ElseIf\s+/i, '').replace(/\s+Then\s*$/i, '');
+        cond = ActionMapper.convertInStr(cond);
+        cond = ActionMapper.convertVbsBuiltinFunctions(cond);
         cond = cond.replace(/\bAnd\b/gi, '&&').replace(/\bOr\b/gi, '||');
         cond = cond.replace(/\bNot\b/gi, '!').replace(/<>/g, '!==');
         cond = cond.replace(/\bMod\b/gi, '%').replace(/\bIs\b/gi, '===');
         cond = cond.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
         cond = cond.replace(/\bNothing\b/gi, 'null').replace(/\bEmpty\b/gi, "''");
-        cond = ActionMapper.convertInStr(cond);
         cond = ConverterEngine.replaceEqualsOutsideStrings(cond);
         cond = cond.replace(/\\/g, '/');
         cond = cond.replace(/\^/g, '**');
@@ -723,6 +758,8 @@ export class ConverterEngine {
         value = value.replace(/\bNothing\b/gi, 'null');
         // Convert VBS string expression to TypeScript
         value = this.convertVbsStringExpression(value);
+        // Convert VBS built-in functions (Mid, Trim, Environment, etc.)
+        value = ActionMapper.convertVbsBuiltinFunctions(value);
         // Use assignment if variable was already declared, otherwise use let
         if (declaredVars.has(varName.toLowerCase())) {
           tsLines.push(`${varName} = ${value};`);
@@ -735,13 +772,14 @@ export class ConverterEngine {
 
       // Fallback — pass through with VBS operator conversion
       let tsLine = trimmed;
+      tsLine = ActionMapper.convertInStr(tsLine);
+      tsLine = ActionMapper.convertVbsBuiltinFunctions(tsLine);
       tsLine = tsLine.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
       tsLine = tsLine.replace(/\bAnd\b/gi, '&&').replace(/\bOr\b/gi, '||');
       tsLine = tsLine.replace(/\bNot\b/gi, '!').replace(/<>/g, '!==');
       tsLine = tsLine.replace(/\bMod\b/gi, '%').replace(/\bIs\b/gi, '===');
       tsLine = tsLine.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
       tsLine = tsLine.replace(/\bNothing\b/gi, 'null').replace(/\bEmpty\b/gi, "''");
-      tsLine = ActionMapper.convertInStr(tsLine);
       tsLine = ConverterEngine.replaceEqualsOutsideStrings(tsLine);
       tsLine = tsLine.replace(/\\/g, '/');
       tsLine = tsLine.replace(/\^/g, '**');
@@ -802,6 +840,53 @@ export class ConverterEngine {
       }
     }
     return line;
+  }
+
+  /**
+   * Check if a VBScript line contains multiple statements separated by : or ;
+   * (outside string literals).
+   */
+  private hasMultiStatementSeparator(line: string): boolean {
+    let inString = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        inString = !inString;
+      } else if (!inString && (ch === ':' || ch === ';')) {
+        // Check if next non-whitespace is another statement keyword or Set/Dim/variable
+        const rest = line.substring(i + 1).trim();
+        if (rest.length > 0 && !/^$/.test(rest)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Split a VBScript line into multiple statements at : or ; separators,
+   * respecting string literals.
+   */
+  private splitVbsStatements(line: string): string[] {
+    const statements: string[] = [];
+    let current = '';
+    let inString = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        inString = !inString;
+        current += ch;
+      } else if (!inString && (ch === ':' || ch === ';')) {
+        const trimmed = current.trim();
+        if (trimmed) statements.push(trimmed);
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+    const trimmed = current.trim();
+    if (trimmed) statements.push(trimmed);
+    return statements;
   }
 
   private convertVbsStringExpression(value: string): string {

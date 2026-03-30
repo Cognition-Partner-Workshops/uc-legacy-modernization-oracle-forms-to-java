@@ -74,6 +74,33 @@ export class VBScriptParser {
       // Strip inline VBScript comments (  'comment after code)
       const fullLine = this.stripInlineComment(rawFullLine);
 
+      // Handle multi-statement lines (VBScript : or ; separator)
+      // Split by : or ; outside strings and process each sub-statement
+      if (this.hasMultiStatementSeparator(fullLine)) {
+        const subStatements = this.splitVbsStatements(fullLine);
+        for (const sub of subStatements) {
+          const subTrimmed = sub.trim();
+          if (!subTrimmed) continue;
+
+          const subVars = this.parseVariables(subTrimmed, lineNum);
+          if (subVars.length > 0) {
+            script.variables.push(...subVars);
+            continue;
+          }
+          const subAction = this.parseAction(subTrimmed, lineNum);
+          if (subAction) {
+            script.actions.push(subAction);
+            continue;
+          }
+          const subControl = this.parseControlFlow(subTrimmed, lineNum);
+          if (subControl) {
+            script.actions.push(subControl);
+            continue;
+          }
+        }
+        continue;
+      }
+
       // Variable declarations
       const variables = this.parseVariables(fullLine, lineNum);
       if (variables.length > 0) {
@@ -642,6 +669,52 @@ export class VBScriptParser {
       return { lineNumber, objectType: 'ControlFlow', objectName: 'Exit', method: 'Exit', arguments: [line], rawLine: line };
     }
     return null;
+  }
+
+  /**
+   * Check if a VBScript line contains multiple statements separated by : or ;
+   * (outside string literals).
+   */
+  private hasMultiStatementSeparator(line: string): boolean {
+    let inString = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        inString = !inString;
+      } else if (!inString && (ch === ':' || ch === ';')) {
+        const rest = line.substring(i + 1).trim();
+        if (rest.length > 0) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Split a VBScript line into multiple statements at : or ; separators,
+   * respecting string literals.
+   */
+  private splitVbsStatements(line: string): string[] {
+    const statements: string[] = [];
+    let current = '';
+    let inString = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        inString = !inString;
+        current += ch;
+      } else if (!inString && (ch === ':' || ch === ';')) {
+        const trimmed = current.trim();
+        if (trimmed) statements.push(trimmed);
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+    const trimmed = current.trim();
+    if (trimmed) statements.push(trimmed);
+    return statements;
   }
 
   private stripInlineComment(line: string): string {

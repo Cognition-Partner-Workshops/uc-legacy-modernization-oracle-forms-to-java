@@ -445,6 +445,22 @@ export class ScriptTransformer {
         continue;
       }
 
+      // Set varName = expression (VBScript object creation / assignment)
+      const setMatch = trimmed.match(/^\s*Set\s+(\w+)\s*=\s*(.+)/i);
+      if (setMatch) {
+        const setVarName = setMatch[1];
+        let setValue = setMatch[2].trim();
+        setValue = ScriptTransformer.convertVbsStringExpr(setValue);
+        setValue = ActionMapper.convertVbsBuiltinFunctions(setValue);
+        if (declaredVars.has(setVarName.toLowerCase())) {
+          tsLines.push(`${setVarName} = ${setValue};`);
+        } else {
+          tsLines.push(`let ${setVarName}: any = ${setValue};`);
+          declaredVars.add(setVarName.toLowerCase());
+        }
+        continue;
+      }
+
       // Generic assignment - check for duplicates
       const assignMatch = trimmed.match(/^(\w+)\s*=\s*(.+)$/);
       if (assignMatch && !/^(If|ElseIf|For|While|Do|Select|End|Else|Next|Wend|Loop|Case)\b/i.test(trimmed)) {
@@ -453,6 +469,8 @@ export class ScriptTransformer {
         value = ScriptTransformer.convertVbsStringExpr(value);
         value = value.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
         value = value.replace(/\bNothing\b/gi, 'null');
+        // Convert VBS built-in functions (Mid, Trim, Environment, etc.)
+        value = ActionMapper.convertVbsBuiltinFunctions(value);
         if (declaredVars.has(varName.toLowerCase())) {
           tsLines.push(`${varName} = ${value};`);
         } else {
@@ -493,6 +511,9 @@ export class ScriptTransformer {
       tsLine = tsLine.replace(/^Case\s+Else/i, 'default:');
       tsLine = tsLine.replace(/^End\s+Select/i, '}');
 
+      // Convert VBS built-in functions before operator conversion
+      tsLine = ActionMapper.convertVbsBuiltinFunctions(tsLine);
+
       // VBScript operators
       tsLine = tsLine.replace(/\bAnd\b/gi, '&&');
       tsLine = tsLine.replace(/\bOr\b/gi, '||');
@@ -529,6 +550,9 @@ export class ScriptTransformer {
 
     // Numbers
     if (/^-?\d+(\.\d+)?$/.test(value)) return value;
+
+    // Convert VBS built-in functions first (Mid, Trim, Environment, etc.)
+    value = ActionMapper.convertVbsBuiltinFunctions(value);
 
     // String expressions (handle & concatenation and strings with single quotes)
     if (value.includes('"')) {
