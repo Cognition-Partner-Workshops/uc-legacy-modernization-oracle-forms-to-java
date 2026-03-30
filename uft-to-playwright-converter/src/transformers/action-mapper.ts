@@ -393,8 +393,8 @@ export class ActionMapper {
     cond = cond.replace(/\bFalse\b/gi, 'false');
     cond = cond.replace(/\bNothing\b/gi, 'null');
     cond = cond.replace(/\bEmpty\b/gi, "''");
-    // Fix single = to === for comparisons (but not assignments or ===/!==)
-    cond = cond.replace(/([^=!<>])=([^=])/g, '$1===$2');
+    // Fix single = to === for comparisons, respecting string literals
+    cond = ActionMapper.replaceEqualsOutsideStrings(cond);
     // Integer division \ -> /
     cond = cond.replace(/\\/g, '/');
     // Exponentiation ^ -> **
@@ -513,6 +513,33 @@ export class ActionMapper {
           result = result.substring(0, funcStart + offset) + replacement + result.substring(funcStart + offset + original.length);
           offset += replacement.length - original.length;
         }
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Replace VBScript = with === for comparisons, but only outside string literals.
+   */
+  static replaceEqualsOutsideStrings(expr: string): string {
+    let result = '';
+    let inString = false;
+    let quoteChar = '';
+    for (let i = 0; i < expr.length; i++) {
+      const ch = expr[i];
+      if (!inString && (ch === '"' || ch === "'")) {
+        inString = true;
+        quoteChar = ch;
+        result += ch;
+      } else if (inString && ch === quoteChar) {
+        inString = false;
+        result += ch;
+      } else if (!inString && ch === '=' &&
+                 (i === 0 || (expr[i - 1] !== '=' && expr[i - 1] !== '!' && expr[i - 1] !== '<' && expr[i - 1] !== '>')) &&
+                 (i + 1 >= expr.length || expr[i + 1] !== '=')) {
+        result += '===';
+      } else {
+        result += ch;
       }
     }
     return result;

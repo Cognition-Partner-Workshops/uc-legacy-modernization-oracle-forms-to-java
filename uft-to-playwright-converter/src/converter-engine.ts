@@ -583,7 +583,8 @@ export class ConverterEngine {
             tsLines.push(`${pwAction.code}`);
             tsLines.push(`if (true /* TODO: replace with proper condition */) {`);
           } else {
-            tsLines.push(`if (await ${pwAction.code}) {`);
+            const condCode = pwAction.code.startsWith('await ') ? pwAction.code : `await ${pwAction.code}`;
+            tsLines.push(`if (${condCode}) {`);
           }
         } else {
           tsLines.push(`// TODO: ${ifObjMatch[1]}`);
@@ -601,8 +602,8 @@ export class ConverterEngine {
         cond = cond.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
         cond = cond.replace(/\bNothing\b/gi, 'null').replace(/\bEmpty\b/gi, "''");
         cond = ActionMapper.convertInStr(cond);
-        // Fix single = to === for comparisons (but not assignments)
-        cond = cond.replace(/([^=!<>])=([^=])/g, '$1===$2');
+        // Fix single = to === for comparisons (but not assignments), respecting string literals
+        cond = ConverterEngine.replaceEqualsOutsideStrings(cond);
         // Integer division \ -> Math.floor division
         cond = cond.replace(/\\/g, '/');
         // Exponentiation ^ -> **
@@ -620,7 +621,7 @@ export class ConverterEngine {
         cond = cond.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
         cond = cond.replace(/\bNothing\b/gi, 'null').replace(/\bEmpty\b/gi, "''");
         cond = ActionMapper.convertInStr(cond);
-        cond = cond.replace(/([^=!<>])=([^=])/g, '$1===$2');
+        cond = ConverterEngine.replaceEqualsOutsideStrings(cond);
         cond = cond.replace(/\\/g, '/');
         cond = cond.replace(/\^/g, '**');
         tsLines.push(`} else if (${cond}) {`);
@@ -692,7 +693,8 @@ export class ConverterEngine {
             tsLines.push(`${pwAction.code}`);
             tsLines.push(`${alreadyDeclared ? '' : 'let '}${objVarName} = '' as string; // TODO: assign from above`);
           } else {
-            tsLines.push(`${alreadyDeclared ? '' : 'let '}${objVarName} = await ${pwAction.code};`);
+            const assignCode = pwAction.code.startsWith('await ') ? pwAction.code : `await ${pwAction.code}`;
+            tsLines.push(`${alreadyDeclared ? '' : 'let '}${objVarName} = ${assignCode};`);
           }
         } else {
           tsLines.push(`// TODO: ${assignObjMatch[2]}`);
@@ -740,7 +742,7 @@ export class ConverterEngine {
       tsLine = tsLine.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
       tsLine = tsLine.replace(/\bNothing\b/gi, 'null').replace(/\bEmpty\b/gi, "''");
       tsLine = ActionMapper.convertInStr(tsLine);
-      tsLine = tsLine.replace(/([^=!<>])=([^=])/g, '$1===$2');
+      tsLine = ConverterEngine.replaceEqualsOutsideStrings(tsLine);
       tsLine = tsLine.replace(/\\/g, '/');
       tsLine = tsLine.replace(/\^/g, '**');
       tsLine = this.convertVbsStringExpression(tsLine);
@@ -761,6 +763,34 @@ export class ConverterEngine {
    * Strip inline VBScript comments from a line.
    * In VBScript, ' starts a comment when outside a string literal.
    */
+  /**
+   * Replace VBScript = with === for comparisons, but only outside string literals.
+   * This prevents corrupting = characters inside quoted strings like "Amount = Total".
+   */
+  static replaceEqualsOutsideStrings(expr: string): string {
+    let result = '';
+    let inString = false;
+    let quoteChar = '';
+    for (let i = 0; i < expr.length; i++) {
+      const ch = expr[i];
+      if (!inString && (ch === '"' || ch === "'")) {
+        inString = true;
+        quoteChar = ch;
+        result += ch;
+      } else if (inString && ch === quoteChar) {
+        inString = false;
+        result += ch;
+      } else if (!inString && ch === '=' &&
+                 (i === 0 || (expr[i - 1] !== '=' && expr[i - 1] !== '!' && expr[i - 1] !== '<' && expr[i - 1] !== '>')) &&
+                 (i + 1 >= expr.length || expr[i + 1] !== '=')) {
+        result += '===';
+      } else {
+        result += ch;
+      }
+    }
+    return result;
+  }
+
   private stripVbsInlineComment(line: string): string {
     let inString = false;
     for (let i = 0; i < line.length; i++) {
@@ -807,7 +837,7 @@ export class ConverterEngine {
     if (hasConcatenation) {
       // Has concatenation but no single quotes — use + operator with single-quoted strings
       value = value.replace(/(?<!&)\s*&(?!&)\s*/g, ' + ');
-      value = value.replace(/"([^"]*)"/g, "'$1'");
+      value = value.replace(/"((?:[^"]|"")*)"/g, (_, content) => `'${content.replace(/""/g, '"')}'`);
       return value;
     }
 
@@ -817,7 +847,7 @@ export class ConverterEngine {
     }
 
     // Simple case — no concatenation, no single quotes — convert to single-quoted strings
-    value = value.replace(/"([^"]*)"/g, "'$1'");
+    value = value.replace(/"((?:[^"]|"")*)"/g, (_, content) => `'${content.replace(/""/g, '"')}'`);
     return value;
   }
 

@@ -496,7 +496,7 @@ export class ScriptTransformer {
       tsLine = tsLine.replace(/\bIs\b/gi, '===');
       tsLine = tsLine.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
       tsLine = tsLine.replace(/\bNothing\b/gi, 'null').replace(/\bEmpty\b/gi, "''");
-      tsLine = tsLine.replace(/([^=!<>])=([^=])/g, '$1===$2');
+      tsLine = ScriptTransformer.replaceEqualsOutsideStrings(tsLine);
       tsLine = tsLine.replace(/\\/g, '/');
       tsLine = tsLine.replace(/\^/g, '**');
 
@@ -622,6 +622,33 @@ export class ScriptTransformer {
    * Strip inline VBScript comments from a line.
    * In VBScript, ' starts a comment when outside a string literal.
    */
+  /**
+   * Replace VBScript = with === for comparisons, but only outside string literals.
+   */
+  static replaceEqualsOutsideStrings(expr: string): string {
+    let result = '';
+    let inString = false;
+    let quoteChar = '';
+    for (let i = 0; i < expr.length; i++) {
+      const ch = expr[i];
+      if (!inString && (ch === '"' || ch === "'")) {
+        inString = true;
+        quoteChar = ch;
+        result += ch;
+      } else if (inString && ch === quoteChar) {
+        inString = false;
+        result += ch;
+      } else if (!inString && ch === '=' &&
+                 (i === 0 || (expr[i - 1] !== '=' && expr[i - 1] !== '!' && expr[i - 1] !== '<' && expr[i - 1] !== '>')) &&
+                 (i + 1 >= expr.length || expr[i + 1] !== '=')) {
+        result += '===';
+      } else {
+        result += ch;
+      }
+    }
+    return result;
+  }
+
   static stripVbsInlineComment(line: string): string {
     let inString = false;
     for (let i = 0; i < line.length; i++) {

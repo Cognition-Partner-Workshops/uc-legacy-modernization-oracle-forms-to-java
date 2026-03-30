@@ -83,7 +83,7 @@ export class VBScriptParser {
 
       // Function/Sub definitions
       if (this.isFunctionStart(fullLine)) {
-        const func = this.parseFunction(lineNum);
+        const func = this.parseFunction(fullLine, lineNum);
         if (func) script.functions.push(func);
         continue;
       }
@@ -206,9 +206,8 @@ export class VBScriptParser {
   /**
    * Parse a Function or Sub definition, including its body
    */
-  private parseFunction(startLineNumber: number): UFTFunction | null {
-    const startLine = this.lines[this.currentLine].trim();
-    const match = startLine.match(
+  private parseFunction(resolvedLine: string, startLineNumber: number): UFTFunction | null {
+    const match = resolvedLine.match(
       /^\s*(?:Public\s+|Private\s+)?(Function|Sub)\s+(\w+)\s*\(?(.*?)\)?\s*$/i
     );
 
