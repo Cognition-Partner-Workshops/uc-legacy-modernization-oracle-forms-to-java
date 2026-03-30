@@ -543,6 +543,7 @@ export class ConverterEngine {
     const lines = body.split('\n');
     const tsLines: string[] = [];
     const mapper = new ActionMapper();
+    const declaredVars = new Set<string>();
 
     for (const line of lines) {
       const trimmed = line.trim();
@@ -559,6 +560,7 @@ export class ConverterEngine {
         const vars = trimmed.replace(/^\s*Dim\s+/i, '').split(',').map(v => v.trim());
         for (const v of vars) {
           tsLines.push(`let ${v} = '';`);
+          declaredVars.add(v.toLowerCase());
         }
         continue;
       }
@@ -675,10 +677,15 @@ export class ConverterEngine {
         let value = assignMatch[2].trim();
         value = value.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
         value = value.replace(/\bNothing\b/gi, 'null');
-        value = value.replace(/\s+&\s+/g, ' + ');
-        // Convert VBS string quotes to TS
-        value = value.replace(/"([^"]*)"/g, "'$1'");
-        tsLines.push(`const ${assignMatch[1]} = ${value};`);
+        // Convert VBS string expression to TypeScript
+        value = this.convertVbsStringExpression(value);
+        // Use assignment if variable was already declared via Dim, otherwise use const
+        const varName = assignMatch[1];
+        if (declaredVars.has(varName.toLowerCase())) {
+          tsLines.push(`${varName} = ${value};`);
+        } else {
+          tsLines.push(`const ${varName} = ${value};`);
+        }
         continue;
       }
 
@@ -687,11 +694,63 @@ export class ConverterEngine {
       tsLine = tsLine.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
       tsLine = tsLine.replace(/\bAnd\b/gi, '&&').replace(/\bOr\b/gi, '||');
       tsLine = tsLine.replace(/\bNot\b/gi, '!').replace(/\b<>\b/g, '!==');
-      tsLine = tsLine.replace(/\s+&\s+/g, ' + ');
+      tsLine = this.convertVbsStringExpression(tsLine);
       tsLines.push(`// TODO: ${tsLine}`);
     }
 
     return tsLines;
+  }
+
+  /**
+   * Convert a VBScript string expression to TypeScript.
+   * Handles & concatenation and strings containing single quotes (e.g., SQL queries).
+   *
+   * VBScript: "select * from t where name ='" & varName & "'"
+   * TypeScript: `select * from t where name ='${varName}'`
+   */
+  private convertVbsStringExpression(value: string): string {
+    // Check if the value contains VBScript string concatenation with &
+    const hasConcatenation = /\s+&\s+/.test(value);
+    // Check if any quoted string segment contains a single quote
+    const hasInnerSingleQuotes = /"[^"]*'[^"]*"/.test(value);
+
+    if (hasConcatenation && hasInnerSingleQuotes) {
+      // Convert the entire concatenated expression to a template literal
+      // Split by & operator, then reassemble as template literal parts
+      const parts = value.split(/\s+&\s+/);
+      let template = '`';
+      for (const part of parts) {
+        const trimmedPart = part.trim();
+        if (trimmedPart.startsWith('"') && trimmedPart.endsWith('"')) {
+          // String literal — extract content (strip outer quotes)
+          // Handle VBScript escaped double quotes ("" → ")
+          const content = trimmedPart.slice(1, -1).replace(/""/g, '"');
+          // Escape backticks inside the content
+          template += content.replace(/`/g, '\\`');
+        } else {
+          // Variable reference — wrap in ${}
+          template += '${' + trimmedPart + '}';
+        }
+      }
+      template += '`';
+      return template;
+    }
+
+    if (hasConcatenation) {
+      // Has concatenation but no single quotes — use + operator with single-quoted strings
+      value = value.replace(/\s+&\s+/g, ' + ');
+      value = value.replace(/"([^"]*)"/g, "'$1'");
+      return value;
+    }
+
+    if (hasInnerSingleQuotes) {
+      // Single string (no concatenation) with single quotes inside — keep double quotes
+      return value;
+    }
+
+    // Simple case — no concatenation, no single quotes — convert to single-quoted strings
+    value = value.replace(/"([^"]*)"/g, "'$1'");
+    return value;
   }
 
   /**

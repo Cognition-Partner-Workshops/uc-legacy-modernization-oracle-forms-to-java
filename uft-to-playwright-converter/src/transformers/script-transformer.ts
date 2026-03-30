@@ -377,8 +377,8 @@ export class ScriptTransformer {
       tsLine = tsLine.replace(/\b<>\b/g, '!==');
       tsLine = tsLine.replace(/\bMod\b/gi, '%');
 
-      // String concatenation (& to +)
-      tsLine = tsLine.replace(/\s+&\s+/g, ' + ');
+      // Convert VBS string expressions (handle & concatenation and strings with single quotes)
+      tsLine = ScriptTransformer.convertVbsStringExpr(tsLine);
 
       tsLines.push(tsLine);
     }
@@ -401,13 +401,52 @@ export class ScriptTransformer {
     // Numbers
     if (/^-?\d+(\.\d+)?$/.test(value)) return value;
 
-    // Already quoted strings
-    if (value.startsWith('"') && value.endsWith('"')) {
-      return value.replace(/"/g, "'").replace(/^'|'$/g, "'");
+    // String expressions (handle & concatenation and strings with single quotes)
+    if (value.includes('"')) {
+      return ScriptTransformer.convertVbsStringExpr(value);
     }
 
     // Everything else - treat as variable reference
     return this.toCamelCase(value);
+  }
+
+  /**
+   * Convert a VBScript string expression to TypeScript.
+   * Handles & concatenation and strings containing single quotes (e.g., SQL queries).
+   */
+  static convertVbsStringExpr(value: string): string {
+    const hasConcatenation = /\s+&\s+/.test(value);
+    const hasInnerSingleQuotes = /"[^"]*'[^"]*"/.test(value);
+
+    if (hasConcatenation && hasInnerSingleQuotes) {
+      // Convert to template literal to avoid quote conflicts
+      const parts = value.split(/\s+&\s+/);
+      let template = '`';
+      for (const part of parts) {
+        const trimmedPart = part.trim();
+        if (trimmedPart.startsWith('"') && trimmedPart.endsWith('"')) {
+          const content = trimmedPart.slice(1, -1).replace(/""/g, '"');
+          template += content.replace(/`/g, '\\`');
+        } else {
+          template += '${' + trimmedPart + '}';
+        }
+      }
+      template += '`';
+      return template;
+    }
+
+    if (hasConcatenation) {
+      value = value.replace(/\s+&\s+/g, ' + ');
+      value = value.replace(/"([^"]*)"/g, "'$1'");
+      return value;
+    }
+
+    if (hasInnerSingleQuotes) {
+      return value;
+    }
+
+    value = value.replace(/"([^"]*)"/g, "'$1'");
+    return value;
   }
 
   /**

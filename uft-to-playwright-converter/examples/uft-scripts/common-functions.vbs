@@ -41,6 +41,9 @@ End Sub
 ' Purpose:  Search for an employee by name and return result count
 ' ============================================================
 Public Function SearchEmployee(empName)
+    Dim strtosql
+    strtosql = "select count(*) from employees where employees.name ='" & empName & "' and employees.status ='active'"
+
     Browser("HRMS").Page("Employee List").WebEdit("txtSearch").Set empName
     Browser("HRMS").Page("Employee List").WebButton("btnSearch").Click
     Wait 2

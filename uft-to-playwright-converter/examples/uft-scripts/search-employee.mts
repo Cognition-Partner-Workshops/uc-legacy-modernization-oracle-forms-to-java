@@ -8,6 +8,9 @@ ExecuteFile "common-functions.vbs"
 ' Login using library function
 Call Login("admin", "encrypted_pwd")
 
+' Build SQL query for employee search
+strtosql = "select count(*) from employees where employees.name ='" & empName & "' and employees.dept ='" & deptCode & "'"
+
 ' Navigate to Employee Search
 Browser("HRMS").Page("Dashboard").Link("lnkEmployees").Click
 Wait 1
