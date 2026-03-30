@@ -328,7 +328,20 @@ export class ScriptTransformer {
       }
     }
 
-    return Array.from(varMap.values()).map(v => {
+    const dedupedVars = Array.from(varMap.values());
+
+    // Sort: declarations without initial values first, then literals (numbers, booleans, strings),
+    // then expressions that may reference other variables. This avoids TS2448 "used before declaration".
+    const varNames = new Set(dedupedVars.map(v => v.name.toLowerCase()));
+    dedupedVars.sort((a, b) => {
+      const aRefOther = a.initialValue ? this.referencesOtherVar(a.initialValue, a.name, varNames) : false;
+      const bRefOther = b.initialValue ? this.referencesOtherVar(b.initialValue, b.name, varNames) : false;
+      if (aRefOther && !bRefOther) return 1;
+      if (!aRefOther && bRefOther) return -1;
+      return 0;
+    });
+
+    return dedupedVars.map(v => {
       const keyword = v.type === 'Const' ? 'const' : 'let';
       if (v.initialValue) {
         const tsValue = this.vbToTsValue(v.initialValue);
@@ -402,7 +415,7 @@ export class ScriptTransformer {
     const declaredVars = new Set<string>();
 
     for (const line of lines) {
-      const trimmed = line.trim();
+      let trimmed = line.trim();
       if (!trimmed) continue;
 
       // Skip comments — add as TS comments
@@ -410,6 +423,10 @@ export class ScriptTransformer {
         tsLines.push(`// ${trimmed.substring(1).trim()}`);
         continue;
       }
+
+      // Strip inline VBScript comments ('comment after code)
+      trimmed = ScriptTransformer.stripVbsInlineComment(trimmed);
+      if (!trimmed) continue;
 
       // Dim declarations - convert to let with empty string default
       const dimMatch = trimmed.match(/^\s*Dim\s+(.+)/i);
@@ -506,7 +523,20 @@ export class ScriptTransformer {
       return ScriptTransformer.convertVbsStringExpr(value);
     }
 
-    // Everything else - treat as variable reference
+    // Arithmetic/complex expressions — if it contains operators, parentheses, or spaces,
+    // pass through as-is (not a simple variable name)
+    if (/[+\-*\/\\\s()><!=]/.test(value)) {
+      // Convert VBScript operators
+      let expr = value;
+      expr = expr.replace(/\bAnd\b/gi, '&&');
+      expr = expr.replace(/\bOr\b/gi, '||');
+      expr = expr.replace(/\bNot\b/gi, '!');
+      expr = expr.replace(/\bMod\b/gi, '%');
+      expr = expr.replace(/\b<>\b/g, '!==');
+      return expr;
+    }
+
+    // Simple variable reference
     return this.toCamelCase(value);
   }
 
@@ -548,6 +578,11 @@ export class ScriptTransformer {
     }
 
     if (hasInnerSingleQuotes) {
+      // Use template literal to safely handle single quotes without concatenation
+      value = value.replace(/"((?:[^"]|"")*)"/g, (_, inner) => {
+        const unescaped = inner.replace(/""/g, '"');
+        return '`' + unescaped.replace(/`/g, '\\`') + '`';
+      });
       return value;
     }
 
@@ -557,6 +592,38 @@ export class ScriptTransformer {
       return "'" + unescaped.replace(/'/g, "\\'") + "'";
     });
     return value;
+  }
+
+  /**
+   * Check if a VBScript initial value expression references another variable
+   * from the same variable set (excluding itself).
+   */
+  private referencesOtherVar(value: string, ownName: string, varNames: Set<string>): boolean {
+    // Extract identifiers from the expression
+    const identifiers = value.match(/\b[a-zA-Z_]\w*\b/g) || [];
+    for (const id of identifiers) {
+      if (id.toLowerCase() !== ownName.toLowerCase() && varNames.has(id.toLowerCase())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Strip inline VBScript comments from a line.
+   * In VBScript, ' starts a comment when outside a string literal.
+   */
+  static stripVbsInlineComment(line: string): string {
+    let inString = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        inString = !inString;
+      } else if (char === "'" && !inString) {
+        return line.substring(0, i).trimEnd();
+      }
+    }
+    return line;
   }
 
   /**

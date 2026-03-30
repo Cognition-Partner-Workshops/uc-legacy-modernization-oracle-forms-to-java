@@ -63,13 +63,16 @@ export class VBScriptParser {
       if (line === '_') continue;
 
       // Resolve line continuations
-      const fullLine = this.resolveLineContinuation(this.currentLine);
+      const rawFullLine = this.resolveLineContinuation(this.currentLine);
 
       // Comments
-      if (fullLine.startsWith("'") || fullLine.toUpperCase().startsWith('REM ')) {
-        script.comments.push(fullLine);
+      if (rawFullLine.startsWith("'") || rawFullLine.toUpperCase().startsWith('REM ')) {
+        script.comments.push(rawFullLine);
         continue;
       }
+
+      // Strip inline VBScript comments (  'comment after code)
+      const fullLine = this.stripInlineComment(rawFullLine);
 
       // Variable declarations
       const variables = this.parseVariables(fullLine, lineNum);
@@ -549,6 +552,26 @@ export class VBScriptParser {
     }
 
     return args;
+  }
+
+  /**
+   * Strip inline VBScript comments from a line.
+   * In VBScript, ' starts a comment but only when it's outside a string literal.
+   * e.g., `itest = icount-1  'script start` → `itest = icount-1`
+   * but   `msg = "it's fine"` should NOT strip anything.
+   */
+  private stripInlineComment(line: string): string {
+    let inString = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        inString = !inString;
+      } else if (char === "'" && !inString) {
+        // Found an inline comment — strip it and trailing whitespace
+        return line.substring(0, i).trimEnd();
+      }
+    }
+    return line;
   }
 
   /**

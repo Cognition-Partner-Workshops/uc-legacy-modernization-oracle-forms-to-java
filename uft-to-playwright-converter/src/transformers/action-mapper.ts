@@ -103,7 +103,8 @@ export class ActionMapper {
         const trimmed = a.trim();
         // If already quoted, convert to single-quoted TS string
         if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
-          return `'${trimmed.slice(1, -1)}'`;
+          const inner = trimmed.slice(1, -1).replace(/'/g, "\\'");
+          return `'${inner}'`;
         }
         // Numbers pass through as-is
         if (/^\d+$/.test(trimmed)) return trimmed;
@@ -188,12 +189,15 @@ export class ActionMapper {
     if (action.objectName.includes(' ') || /^[A-Z]/.test(action.objectName)) {
       // Use role-based selector for buttons
       if (['WebButton', 'WinButton'].includes(action.objectType)) {
-        return `page.getByRole('button', { name: '${action.objectName}' })`;
+        const safeName = action.objectName.replace(/'/g, "\\'");
+        return `page.getByRole('button', { name: '${safeName}' })`;
       }
       if (action.objectType === 'Link') {
-        return `page.getByRole('link', { name: '${action.objectName}' })`;
+        const safeName = action.objectName.replace(/'/g, "\\'");
+        return `page.getByRole('link', { name: '${safeName}' })`;
       }
-      return `page.getByText('${action.objectName}')`;
+      const safeName = action.objectName.replace(/'/g, "\\'");
+      return `page.getByText('${safeName}')`;
     }
 
     return `'#${action.objectName}'`;
@@ -267,7 +271,8 @@ export class ActionMapper {
     const tsParts = parts.map(p => {
       const trimmed = p.trim();
       if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
-        return "'" + trimmed.slice(1, -1) + "'";
+        const inner = trimmed.slice(1, -1).replace(/'/g, "\\'");
+        return "'" + inner + "'";
       }
       return trimmed;
     });

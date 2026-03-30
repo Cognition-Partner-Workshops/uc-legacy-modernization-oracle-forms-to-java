@@ -548,7 +548,7 @@ export class ConverterEngine {
     const declaredVars = new Set<string>();
 
     for (const line of lines) {
-      const trimmed = line.trim();
+      let trimmed = line.trim();
       if (!trimmed) continue;
 
       // Skip comments — add as TS comments
@@ -556,6 +556,11 @@ export class ConverterEngine {
         tsLines.push(`// ${trimmed.substring(1).trim()}`);
         continue;
       }
+
+      // Strip inline VBScript comments ('comment after code)
+      // Only strip ' that is outside of string literals
+      trimmed = this.stripVbsInlineComment(trimmed);
+      if (!trimmed) continue;
 
       // Dim declarations - initialize with empty string to avoid TS2454
       if (/^\s*Dim\s+/i.test(trimmed)) {
@@ -730,6 +735,23 @@ export class ConverterEngine {
    * VBScript: "select * from t where name ='" & varName & "'"
    * TypeScript: `select * from t where name ='${varName}'`
    */
+  /**
+   * Strip inline VBScript comments from a line.
+   * In VBScript, ' starts a comment when outside a string literal.
+   */
+  private stripVbsInlineComment(line: string): string {
+    let inString = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        inString = !inString;
+      } else if (char === "'" && !inString) {
+        return line.substring(0, i).trimEnd();
+      }
+    }
+    return line;
+  }
+
   private convertVbsStringExpression(value: string): string {
     // Check if the value contains VBScript string concatenation with &
     // Support & with or without surrounding spaces, but not && (which is converted from VBS And)
