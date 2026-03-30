@@ -510,8 +510,8 @@ export class ConverterEngine {
 
       lines.push(`export async function ${funcName}(${params.join(', ')}): ${returnType} {`);
 
-      // Convert function body
-      const bodyLines = this.convertFunctionBody(func.body);
+      // Convert function body — pass function name to detect VBS return value assignments
+      const bodyLines = this.convertFunctionBody(func.body, func.name);
       for (const bodyLine of bodyLines) {
         lines.push(`  ${bodyLine}`);
       }
@@ -538,8 +538,10 @@ export class ConverterEngine {
 
   /**
    * Convert VBScript function body to TypeScript lines.
+   * @param body - The raw VBScript function body
+   * @param functionName - Optional function name to detect VBS return value assignments (FuncName = value)
    */
-  private convertFunctionBody(body: string): string[] {
+  private convertFunctionBody(body: string, functionName?: string): string[] {
     const lines = body.split('\n');
     const tsLines: string[] = [];
     const mapper = new ActionMapper();
@@ -655,18 +657,29 @@ export class ConverterEngine {
       // Assignment with UFT object on right side (e.g., varName = Browser(...).GetROProperty(...))
       const assignObjMatch = trimmed.match(/^(\w+)\s*=\s*(Browser\(.+)/i);
       if (assignObjMatch) {
+        const objVarName = assignObjMatch[1];
+        // Skip VBScript return value assignments (FuncName = value)
+        if (functionName && objVarName.toLowerCase() === functionName.toLowerCase()) {
+          tsLines.push(`// VBS return value: ${objVarName} = (see above)`);
+          continue;
+        }
+        const alreadyDeclared = declaredVars.has(objVarName.toLowerCase());
+        const declKeyword = alreadyDeclared ? '' : 'const ';
         const rhsAction = this.parser.parseAction(assignObjMatch[2], 0);
         if (rhsAction) {
           const pwAction = mapper.map(rhsAction);
           if (pwAction.code.includes('TODO') || pwAction.code.startsWith('//')) {
             tsLines.push(`${pwAction.code}`);
-            tsLines.push(`const ${assignObjMatch[1]} = '' as string; // TODO: assign from above`);
+            tsLines.push(`${alreadyDeclared ? '' : 'let '}${objVarName} = '' as string; // TODO: assign from above`);
           } else {
-            tsLines.push(`const ${assignObjMatch[1]} = await ${pwAction.code};`);
+            tsLines.push(`${alreadyDeclared ? '' : 'let '}${objVarName} = await ${pwAction.code};`);
           }
         } else {
           tsLines.push(`// TODO: ${assignObjMatch[2]}`);
-          tsLines.push(`const ${assignObjMatch[1]} = '' as string; // TODO: assign from above`);
+          tsLines.push(`${alreadyDeclared ? '' : 'let '}${objVarName} = '' as string; // TODO: assign from above`);
+        }
+        if (!alreadyDeclared) {
+          declaredVars.add(objVarName.toLowerCase());
         }
         continue;
       }
@@ -674,17 +687,26 @@ export class ConverterEngine {
       // Generic assignment
       const assignMatch = trimmed.match(/^(\w+)\s*=\s*(.+)$/);
       if (assignMatch && !/^(If|ElseIf|For|While|Do|Select)\b/i.test(trimmed)) {
+        const varName = assignMatch[1];
+        // Skip VBScript return value assignments (FuncName = value)
+        if (functionName && varName.toLowerCase() === functionName.toLowerCase()) {
+          let retVal = assignMatch[2].trim();
+          retVal = retVal.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
+          retVal = retVal.replace(/\bNothing\b/gi, 'null');
+          tsLines.push(`// VBS return value: ${varName} = ${retVal}`);
+          continue;
+        }
         let value = assignMatch[2].trim();
         value = value.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
         value = value.replace(/\bNothing\b/gi, 'null');
         // Convert VBS string expression to TypeScript
         value = this.convertVbsStringExpression(value);
-        // Use assignment if variable was already declared via Dim, otherwise use const
-        const varName = assignMatch[1];
+        // Use assignment if variable was already declared, otherwise use let
         if (declaredVars.has(varName.toLowerCase())) {
           tsLines.push(`${varName} = ${value};`);
         } else {
-          tsLines.push(`const ${varName} = ${value};`);
+          tsLines.push(`let ${varName} = ${value};`);
+          declaredVars.add(varName.toLowerCase());
         }
         continue;
       }
@@ -710,14 +732,16 @@ export class ConverterEngine {
    */
   private convertVbsStringExpression(value: string): string {
     // Check if the value contains VBScript string concatenation with &
-    const hasConcatenation = /\s+&\s+/.test(value);
+    // Support & with or without surrounding spaces, but not && (which is converted from VBS And)
+    const concatPattern = /(?<!&)\s*&(?!&)\s*/;
+    const hasConcatenation = concatPattern.test(value);
     // Check if any quoted string segment contains a single quote
     const hasInnerSingleQuotes = /"[^"]*'[^"]*"/.test(value);
 
     if (hasConcatenation && hasInnerSingleQuotes) {
       // Convert the entire concatenated expression to a template literal
       // Split by & operator, then reassemble as template literal parts
-      const parts = value.split(/\s+&\s+/);
+      const parts = value.split(/(?<!&)\s*&(?!&)\s*/);
       let template = '`';
       for (const part of parts) {
         const trimmedPart = part.trim();
@@ -738,7 +762,7 @@ export class ConverterEngine {
 
     if (hasConcatenation) {
       // Has concatenation but no single quotes — use + operator with single-quoted strings
-      value = value.replace(/\s+&\s+/g, ' + ');
+      value = value.replace(/(?<!&)\s*&(?!&)\s*/g, ' + ');
       value = value.replace(/"([^"]*)"/g, "'$1'");
       return value;
     }
@@ -773,8 +797,8 @@ export class ConverterEngine {
       const lines: string[] = [];
       lines.push(`async function ${funcName}(${params.join(', ')}): Promise<void> {`);
 
-      // Convert function body
-      const bodyLines = this.convertFunctionBody(func.body);
+      // Convert function body — pass function name to detect VBS return value assignments
+      const bodyLines = this.convertFunctionBody(func.body, func.name);
       for (const bodyLine of bodyLines) {
         lines.push(`  ${bodyLine}`);
       }

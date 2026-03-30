@@ -351,10 +351,45 @@ export class ScriptTransformer {
   private transformFunctionBody(body: string): string[] {
     const lines = body.split('\n');
     const tsLines: string[] = [];
+    const declaredVars = new Set<string>();
 
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
+
+      // Skip comments — add as TS comments
+      if (trimmed.startsWith("'")) {
+        tsLines.push(`// ${trimmed.substring(1).trim()}`);
+        continue;
+      }
+
+      // Dim declarations - convert to let with empty string default
+      const dimMatch = trimmed.match(/^\s*Dim\s+(.+)/i);
+      if (dimMatch) {
+        const vars = dimMatch[1].split(',').map((v: string) => v.trim());
+        for (const v of vars) {
+          tsLines.push(`let ${v} = '';`);
+          declaredVars.add(v.toLowerCase());
+        }
+        continue;
+      }
+
+      // Generic assignment - check for duplicates
+      const assignMatch = trimmed.match(/^(\w+)\s*=\s*(.+)$/);
+      if (assignMatch && !/^(If|ElseIf|For|While|Do|Select|End|Else|Next|Wend|Loop|Case)\b/i.test(trimmed)) {
+        const varName = assignMatch[1];
+        let value = assignMatch[2].trim();
+        value = ScriptTransformer.convertVbsStringExpr(value);
+        value = value.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
+        value = value.replace(/\bNothing\b/gi, 'null');
+        if (declaredVars.has(varName.toLowerCase())) {
+          tsLines.push(`${varName} = ${value};`);
+        } else {
+          tsLines.push(`const ${varName} = ${value};`);
+          declaredVars.add(varName.toLowerCase());
+        }
+        continue;
+      }
 
       // Transform common VBScript patterns
       let tsLine = trimmed;
@@ -432,12 +467,14 @@ export class ScriptTransformer {
    * Handles & concatenation and strings containing single quotes (e.g., SQL queries).
    */
   static convertVbsStringExpr(value: string): string {
-    const hasConcatenation = /\s+&\s+/.test(value);
+    // Support & with or without surrounding spaces, but not && (which is converted from VBS And)
+    const concatPattern = /(?<!&)\s*&(?!&)\s*/;
+    const hasConcatenation = concatPattern.test(value);
     const hasInnerSingleQuotes = /"[^"]*'[^"]*"/.test(value);
 
     if (hasConcatenation && hasInnerSingleQuotes) {
       // Convert to template literal to avoid quote conflicts
-      const parts = value.split(/\s+&\s+/);
+      const parts = value.split(/(?<!&)\s*&(?!&)\s*/);
       let template = '`';
       for (const part of parts) {
         const trimmedPart = part.trim();
@@ -453,7 +490,7 @@ export class ScriptTransformer {
     }
 
     if (hasConcatenation) {
-      value = value.replace(/\s+&\s+/g, ' + ');
+      value = value.replace(/(?<!&)\s*&(?!&)\s*/g, ' + ');
       value = value.replace(/"([^"]*)"/g, "'$1'");
       return value;
     }
