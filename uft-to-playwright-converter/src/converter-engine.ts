@@ -678,6 +678,147 @@ export class ConverterEngine {
       }
       if (/^Next\s*$/i.test(trimmed)) { tsLines.push('}'); continue; }
 
+      // Do While...Loop / Do Until...Loop / Do...Loop While / Do...Loop Until
+      if (/^Do\s+While\s+(.+)/i.test(trimmed)) {
+        let cond = trimmed.replace(/^Do\s+While\s+/i, '');
+        cond = ActionMapper.convertVbsBuiltinFunctions(cond);
+        cond = cond.replace(/\bAnd\b/gi, '&&').replace(/\bOr\b/gi, '||');
+        cond = cond.replace(/\bNot\b/gi, '!').replace(/<>/g, '!==');
+        cond = cond.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
+        cond = cond.replace(/\bNothing\b/gi, 'null').replace(/\bEmpty\b/gi, "''");
+        cond = ConverterEngine.replaceEqualsOutsideStrings(cond);
+        tsLines.push(`while (${cond}) {`);
+        continue;
+      }
+      if (/^Do\s+Until\s+(.+)/i.test(trimmed)) {
+        let cond = trimmed.replace(/^Do\s+Until\s+/i, '');
+        cond = ActionMapper.convertVbsBuiltinFunctions(cond);
+        cond = cond.replace(/\bAnd\b/gi, '&&').replace(/\bOr\b/gi, '||');
+        cond = cond.replace(/\bNot\b/gi, '!').replace(/<>/g, '!==');
+        cond = cond.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
+        cond = cond.replace(/\bNothing\b/gi, 'null').replace(/\bEmpty\b/gi, "''");
+        cond = ConverterEngine.replaceEqualsOutsideStrings(cond);
+        tsLines.push(`while (!(${cond})) {`);
+        continue;
+      }
+      if (/^Do\s*$/i.test(trimmed)) {
+        tsLines.push('while (true) {');
+        continue;
+      }
+      if (/^Loop\s+While\s+(.+)/i.test(trimmed)) {
+        let cond = trimmed.replace(/^Loop\s+While\s+/i, '');
+        cond = ActionMapper.convertVbsBuiltinFunctions(cond);
+        cond = cond.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
+        cond = ConverterEngine.replaceEqualsOutsideStrings(cond);
+        tsLines.push(`} // Loop While ${cond}`);
+        continue;
+      }
+      if (/^Loop\s+Until\s+(.+)/i.test(trimmed)) {
+        let cond = trimmed.replace(/^Loop\s+Until\s+/i, '');
+        cond = ActionMapper.convertVbsBuiltinFunctions(cond);
+        cond = cond.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
+        cond = ConverterEngine.replaceEqualsOutsideStrings(cond);
+        tsLines.push(`} // Loop Until ${cond}`);
+        continue;
+      }
+      if (/^Loop\s*$/i.test(trimmed)) { tsLines.push('}'); continue; }
+
+      // While...Wend
+      if (/^While\s+(.+)/i.test(trimmed)) {
+        let cond = trimmed.replace(/^While\s+/i, '');
+        cond = ActionMapper.convertVbsBuiltinFunctions(cond);
+        cond = cond.replace(/\bAnd\b/gi, '&&').replace(/\bOr\b/gi, '||');
+        cond = cond.replace(/\bNot\b/gi, '!').replace(/<>/g, '!==');
+        cond = cond.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
+        cond = ConverterEngine.replaceEqualsOutsideStrings(cond);
+        tsLines.push(`while (${cond}) {`);
+        continue;
+      }
+      if (/^Wend\s*$/i.test(trimmed)) { tsLines.push('}'); continue; }
+
+      // Select Case...End Select
+      if (/^Select\s+Case\s+(.+)/i.test(trimmed)) {
+        let caseExpr = trimmed.replace(/^Select\s+Case\s+/i, '');
+        caseExpr = ActionMapper.convertVbsBuiltinFunctions(caseExpr);
+        tsLines.push(`switch (${caseExpr}) {`);
+        continue;
+      }
+      if (/^Case\s+Else\s*$/i.test(trimmed)) { tsLines.push('default:'); continue; }
+      if (/^Case\s+(.+)/i.test(trimmed)) {
+        const caseVal = trimmed.replace(/^Case\s+/i, '').trim();
+        const converted = this.convertVbsStringExpression(caseVal);
+        tsLines.push(`case ${converted}:`);
+        continue;
+      }
+      if (/^End\s+Select\s*$/i.test(trimmed)) { tsLines.push('}'); continue; }
+
+      // With...End With
+      if (/^With\s+(.+)/i.test(trimmed)) {
+        const withObj = trimmed.replace(/^With\s+/i, '').trim();
+        tsLines.push(`// With ${withObj}`);
+        tsLines.push('{');
+        continue;
+      }
+      if (/^End\s+With\s*$/i.test(trimmed)) { tsLines.push('}'); continue; }
+
+      // ReDim
+      if (/^ReDim\s+(Preserve\s+)?(\w+)\s*\((.+)\)/i.test(trimmed)) {
+        const redimMatch = trimmed.match(/^ReDim\s+(Preserve\s+)?(\w+)\s*\((.+)\)/i);
+        if (redimMatch) {
+          const varName = redimMatch[2];
+          const size = redimMatch[3];
+          if (redimMatch[1]) {
+            tsLines.push(`${varName}.length = ${size} + 1;`);
+          } else if (declaredVars.has(varName.toLowerCase())) {
+            tsLines.push(`${varName} = new Array(${size} + 1).fill('');`);
+          } else {
+            tsLines.push(`let ${varName} = new Array(${size} + 1).fill('');`);
+            declaredVars.add(varName.toLowerCase());
+          }
+        }
+        continue;
+      }
+
+      // On Error Resume Next / GoTo 0
+      if (/^On\s+Error\s+Resume\s+Next/i.test(trimmed)) {
+        tsLines.push('// On Error Resume Next — wrapped in try/catch');
+        tsLines.push('try {');
+        continue;
+      }
+      if (/^On\s+Error\s+GoTo\s+0/i.test(trimmed)) {
+        tsLines.push('} catch (e) { /* On Error GoTo 0 — errors re-enabled */ }');
+        continue;
+      }
+
+      // Exit For/Do/Function/Sub
+      if (/^Exit\s+For\s*$/i.test(trimmed)) { tsLines.push('break;'); continue; }
+      if (/^Exit\s+Do\s*$/i.test(trimmed)) { tsLines.push('break;'); continue; }
+      if (/^Exit\s+(Function|Sub)\s*$/i.test(trimmed)) { tsLines.push('return;'); continue; }
+
+      // Print / Debug.Print
+      if (/^(Debug\.)?Print\s+(.+)/i.test(trimmed)) {
+        const printMatch = trimmed.match(/^(?:Debug\.)?Print\s+(.+)/i);
+        if (printMatch) {
+          let msg = printMatch[1];
+          msg = this.convertVbsStringExpression(msg);
+          msg = ActionMapper.convertVbsBuiltinFunctions(msg);
+          tsLines.push(`console.log(${msg});`);
+        }
+        continue;
+      }
+
+      // MsgBox
+      if (/^MsgBox\s+(.+)/i.test(trimmed)) {
+        const msgMatch = trimmed.match(/^MsgBox\s+(.+)/i);
+        if (msgMatch) {
+          let msg = msgMatch[1];
+          msg = this.convertVbsStringExpression(msg);
+          msg = ActionMapper.convertVbsBuiltinFunctions(msg);
+          tsLines.push(`console.log('MsgBox: ' + ${msg});`);
+        }
+        continue;
+      }
+
       // Wait N
       if (/^\s*Wait\s+\d+/i.test(trimmed)) {
         const waitMatch = trimmed.match(/Wait\s+(\d+)/i);
@@ -697,6 +838,39 @@ export class ConverterEngine {
           tsLines.push(`console.log('[${repMatch[1]}] ${repMatch[2]}: ' + ${msgParts});`);
         } else {
           tsLines.push(`// ${trimmed}`);
+        }
+        continue;
+      }
+
+      // For Each...Next
+      if (/^For\s+Each\s+(\w+)\s+In\s+(.+)/i.test(trimmed)) {
+        const feMatch = trimmed.match(/^For\s+Each\s+(\w+)\s+In\s+(.+)/i);
+        if (feMatch) {
+          tsLines.push(`for (const ${feMatch[1]} of ${feMatch[2]}) {`);
+          declaredVars.add(feMatch[1].toLowerCase());
+        }
+        continue;
+      }
+
+      // Const declarations
+      if (/^Const\s+(\w+)\s*=\s*(.+)/i.test(trimmed)) {
+        const constMatch = trimmed.match(/^Const\s+(\w+)\s*=\s*(.+)/i);
+        if (constMatch) {
+          let val = this.convertVbsStringExpression(constMatch[2].trim());
+          val = ActionMapper.convertVbsBuiltinFunctions(val);
+          tsLines.push(`const ${constMatch[1]} = ${val};`);
+          declaredVars.add(constMatch[1].toLowerCase());
+        }
+        continue;
+      }
+
+      // Call statement
+      if (/^Call\s+(\w+)/i.test(trimmed)) {
+        const callMatch = trimmed.match(/^Call\s+(\w+)\s*\(?(.*)\)?/i);
+        if (callMatch) {
+          const funcName = callMatch[1];
+          const callArgs = callMatch[2] ? callMatch[2].replace(/\)$/, '') : '';
+          tsLines.push(`await ${funcName}(page${callArgs ? ', ' + callArgs : ''});`);
         }
         continue;
       }

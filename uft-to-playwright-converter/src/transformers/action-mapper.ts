@@ -111,8 +111,8 @@ export class ActionMapper {
           const inner = trimmed.slice(1, -1).replace(/'/g, "\\'");
           return `'${inner}'`;
         }
-        // Numbers pass through as-is
-        if (/^\d+$/.test(trimmed)) return trimmed;
+        // Numbers: strip leading zeros to avoid octal literal errors in strict mode
+        if (/^\d+$/.test(trimmed)) return String(parseInt(trimmed, 10));
         // Variable references pass through as-is
         return trimmed;
       });
@@ -524,7 +524,10 @@ export class ActionMapper {
   /**
    * Convert VBScript built-in functions to TypeScript equivalents.
    * Handles Mid, Trim, Left, Right, Len, LCase, UCase, Replace, CStr, CInt, CDbl,
-   * IsEmpty, IsNull, IsNumeric, Split, Join, Asc, Chr, LTrim, RTrim, Now, Date.
+   * IsEmpty, IsNull, IsNumeric, Split, Join, Asc, Chr, LTrim, RTrim, Now, Date,
+   * Day, Month, Year, Hour, Minute, Second, DatePart, MonthName, DateAdd, DateDiff,
+   * DateSerial, TimeSerial, Weekday, DateValue, TimeValue, FormatDateTime,
+   * CreateObject, Eval, TypeName, VarType, IsDate, IsArray, IsObject, UBound, LBound, Array.
    * Also converts Environment references to process.env.
    */
   static convertVbsBuiltinFunctions(expr: string): string {
@@ -552,6 +555,9 @@ export class ActionMapper {
       'IsEmpty': (args) => `(${args[0]} === '' || ${args[0]} === undefined)`,
       'IsNull': (args) => `(${args[0]} === null)`,
       'IsNumeric': (args) => `!isNaN(Number(${args[0]}))`,
+      'IsDate': (args) => `!isNaN(Date.parse(${args[0]}))`,
+      'IsArray': (args) => `Array.isArray(${args[0]})`,
+      'IsObject': (args) => `(typeof ${args[0]} === 'object' && ${args[0]} !== null)`,
       'Replace': (args) => {
         if (args.length >= 3) return `(${args[0]}).replace(new RegExp(${args[1]}, 'g'), ${args[2]})`;
         return `Replace(${args.join(', ')})`;
@@ -570,6 +576,117 @@ export class ActionMapper {
       'Space': (args) => `' '.repeat(${args[0]})`,
       'String': (args) => args.length >= 2 ? `(${args[1]}).repeat(${args[0]})` : `String(${args[0]})`,
       'FormatNumber': (args) => args.length >= 2 ? `Number(${args[0]}).toFixed(${args[1]})` : `Number(${args[0]}).toFixed(2)`,
+      // Date/Time functions
+      'Year': (args) => `(${args[0]}).getFullYear()`,
+      'Month': (args) => `((${args[0]}).getMonth() + 1)`,
+      'Day': (args) => `(${args[0]}).getDate()`,
+      'Hour': (args) => `(${args[0]}).getHours()`,
+      'Minute': (args) => `(${args[0]}).getMinutes()`,
+      'Second': (args) => `(${args[0]}).getSeconds()`,
+      'Weekday': (args) => `((${args[0]}).getDay() + 1)`,
+      'DatePart': (args) => {
+        if (args.length < 2) return `DatePart(${args.join(', ')})`;
+        const interval = args[0].replace(/["']/g, '');
+        const dateExpr = args[1];
+        switch (interval) {
+          case 'yyyy': return `(${dateExpr}).getFullYear()`;
+          case 'q': return `(Math.floor((${dateExpr}).getMonth() / 3) + 1)`;
+          case 'm': return `((${dateExpr}).getMonth() + 1)`;
+          case 'd': return `(${dateExpr}).getDate()`;
+          case 'w': return `((${dateExpr}).getDay() + 1)`;
+          case 'ww': return `Math.ceil((((${dateExpr}).getTime() - new Date((${dateExpr}).getFullYear(), 0, 1).getTime()) / 86400000) / 7)`;
+          case 'h': return `(${dateExpr}).getHours()`;
+          case 'n': return `(${dateExpr}).getMinutes()`;
+          case 's': return `(${dateExpr}).getSeconds()`;
+          default: return `(${dateExpr}).getFullYear()`;
+        }
+      },
+      'MonthName': (args) => {
+        return `new Date(2000, ${args[0]} - 1, 1).toLocaleString('default', { month: 'long' })`;
+      },
+      'DateAdd': (args) => {
+        if (args.length < 3) return `DateAdd(${args.join(', ')})`;
+        const interval = args[0].replace(/["']/g, '');
+        const num = args[1];
+        const dateExpr = args[2];
+        switch (interval) {
+          case 'd': return `new Date(new Date(${dateExpr}).setDate(new Date(${dateExpr}).getDate() + ${num}))`;
+          case 'm': return `new Date(new Date(${dateExpr}).setMonth(new Date(${dateExpr}).getMonth() + ${num}))`;
+          case 'yyyy': return `new Date(new Date(${dateExpr}).setFullYear(new Date(${dateExpr}).getFullYear() + ${num}))`;
+          case 'h': return `new Date(new Date(${dateExpr}).setHours(new Date(${dateExpr}).getHours() + ${num}))`;
+          case 'n': return `new Date(new Date(${dateExpr}).setMinutes(new Date(${dateExpr}).getMinutes() + ${num}))`;
+          case 's': return `new Date(new Date(${dateExpr}).setSeconds(new Date(${dateExpr}).getSeconds() + ${num}))`;
+          default: return `new Date(new Date(${dateExpr}).setDate(new Date(${dateExpr}).getDate() + ${num}))`;
+        }
+      },
+      'DateDiff': (args) => {
+        if (args.length < 3) return `DateDiff(${args.join(', ')})`;
+        const interval = args[0].replace(/["']/g, '');
+        const date1 = args[1];
+        const date2 = args[2];
+        switch (interval) {
+          case 'd': return `Math.floor((new Date(${date2}).getTime() - new Date(${date1}).getTime()) / 86400000)`;
+          case 'h': return `Math.floor((new Date(${date2}).getTime() - new Date(${date1}).getTime()) / 3600000)`;
+          case 'n': return `Math.floor((new Date(${date2}).getTime() - new Date(${date1}).getTime()) / 60000)`;
+          case 's': return `Math.floor((new Date(${date2}).getTime() - new Date(${date1}).getTime()) / 1000)`;
+          case 'm': return `((new Date(${date2}).getFullYear() - new Date(${date1}).getFullYear()) * 12 + new Date(${date2}).getMonth() - new Date(${date1}).getMonth())`;
+          case 'yyyy': return `(new Date(${date2}).getFullYear() - new Date(${date1}).getFullYear())`;
+          default: return `Math.floor((new Date(${date2}).getTime() - new Date(${date1}).getTime()) / 86400000)`;
+        }
+      },
+      'DateSerial': (args) => args.length >= 3 ? `new Date(${args[0]}, ${args[1]} - 1, ${args[2]})` : `DateSerial(${args.join(', ')})`,
+      'TimeSerial': (args) => args.length >= 3 ? `new Date(1970, 0, 1, ${args[0]}, ${args[1]}, ${args[2]})` : `TimeSerial(${args.join(', ')})`,
+      'DateValue': (args) => `new Date(${args[0]})`,
+      'TimeValue': (args) => `new Date('1970-01-01T' + ${args[0]})`,
+      'FormatDateTime': (args) => {
+        if (args.length >= 2) {
+          const fmt = args[1].trim();
+          if (fmt === '2' || fmt === 'vbShortDate') return `(${args[0]}).toLocaleDateString()`;
+          if (fmt === '3' || fmt === 'vbLongDate') return `(${args[0]}).toLocaleDateString('default', { dateStyle: 'long' })`;
+          if (fmt === '4' || fmt === 'vbShortTime') return `(${args[0]}).toLocaleTimeString()`;
+        }
+        return `(${args[0]}).toLocaleString()`;
+      },
+      'Timer': () => `(Date.now() / 1000)`,
+      // CreateObject — convert to proper stubs
+      'CreateObject': (args) => {
+        const progId = args[0].replace(/["']/g, '');
+        if (progId === 'Scripting.FileSystemObject' || progId.toLowerCase().includes('filesystemobject')) {
+          return `require('fs')`;
+        }
+        if (progId === 'Scripting.Dictionary') {
+          return `new Map()`;
+        }
+        if (progId.startsWith('ADODB.')) {
+          return `null as any /* TODO: Replace ADODB ${progId} with proper DB client */`;
+        }
+        if (progId === 'WScript.Shell') {
+          return `require('child_process')`;
+        }
+        if (progId.startsWith('Word.') || progId.startsWith('Excel.') || progId.startsWith('Outlook.')) {
+          return `null as any /* TODO: Replace COM object ${progId} with appropriate Node.js library */`;
+        }
+        return `null as any /* TODO: Replace CreateObject('${progId}') */`;
+      },
+      // Eval
+      'Eval': (args) => `eval(${args[0]})`,
+      // Type checking
+      'TypeName': (args) => `typeof ${args[0]}`,
+      'VarType': (args) => `typeof ${args[0]}`,
+      // Array functions
+      'UBound': (args) => `(${args[0]}).length - 1`,
+      'LBound': () => `0`,
+      'Array': (args) => `[${args.join(', ')}]`,
+      // Math functions
+      'Abs': (args) => `Math.abs(${args[0]})`,
+      'Int': (args) => `Math.floor(${args[0]})`,
+      'Fix': (args) => `Math.trunc(${args[0]})`,
+      'Sgn': (args) => `Math.sign(${args[0]})`,
+      'Sqr': (args) => `Math.sqrt(${args[0]})`,
+      'Rnd': () => `Math.random()`,
+      'Round': (args) => args.length >= 2 ? `Number(${args[0]}).toFixed(${args[1]})` : `Math.round(${args[0]})`,
+      'Hex': (args) => `(${args[0]}).toString(16).toUpperCase()`,
+      'Oct': (args) => `(${args[0]}).toString(8)`,
     };
 
     let result = expr;
@@ -581,11 +698,17 @@ export class ActionMapper {
     result = result.replace(/Environment\s*\(\s*'([^']*)'\s*\)/gi, "process.env['$1'] || ''");
 
     // Convert standalone VBS keywords
+    // Important: Convert Now first, then Date — but Date must not match inside 'new Date()'
     result = result.replace(/\bNow\b/g, 'new Date()');
+    result = result.replace(/(?<!new\s)\bDate\b(?!\s*\.|\s*\()/g, 'new Date()');
     result = result.replace(/\bvbCrLf\b/gi, "'\\n'");
     result = result.replace(/\bvbTab\b/gi, "'\\t'");
     result = result.replace(/\bvbNewLine\b/gi, "'\\n'");
     result = result.replace(/\bvbNullString\b/gi, "''");
+    result = result.replace(/\bvbNullChar\b/gi, "'\\0'");
+    result = result.replace(/\bvbCr\b/gi, "'\\r'");
+    result = result.replace(/\bvbLf\b/gi, "'\\n'");
+    result = result.replace(/\bvbObjectError\b/gi, '0x80040000');
 
     // Process each built-in function
     for (const [funcName, converter] of Object.entries(converters)) {
@@ -703,6 +826,11 @@ export class ActionMapper {
     if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
       const inner = cleaned.slice(1, -1).replace(/'/g, "\\'");
       return "'" + inner + "'";
+    }
+
+    // Strip leading zeros from numeric arguments to avoid octal literal errors
+    if (/^0\d+$/.test(cleaned)) {
+      return String(parseInt(cleaned, 10));
     }
 
     return cleaned;

@@ -469,12 +469,7 @@ ${projects.join(',\n')}
       stubs.push('}');
     }
 
-    if (allCode.includes('CreateObject(')) {
-      stubs.push('// TODO: Replace CreateObject calls with appropriate Playwright/Node.js equivalents');
-      stubs.push('function CreateObject(progId: string): Record<string, unknown> {');
-      stubs.push("  return {}; // Stub for VBScript CreateObject('\" + progId + \"')");
-      stubs.push('}');
-    }
+    // CreateObject is now handled inline by convertVbsBuiltinFunctions — no stub needed
 
     // Detect undeclared function calls: identifiers followed by ( that aren't
     // known JS/TS/Playwright globals and aren't already declared as helpers
@@ -492,7 +487,42 @@ ${projects.join(',\n')}
       'parseInt', 'parseFloat', 'String', 'Number', 'Boolean',
       'setTimeout', 'setInterval', 'JSON', 'Array', 'Object',
       'Date', 'Math', 'Promise', 'Error', 'RegExp', 'Map', 'Set',
-      'DataTable', 'CreateObject', // already stubbed above
+      'DataTable', 'CreateObject',
+      // VBS functions now converted inline by convertVbsBuiltinFunctions
+      'Mid', 'Trim', 'LTrim', 'RTrim', 'Left', 'Right', 'Len',
+      'LCase', 'UCase', 'CStr', 'CInt', 'CLng', 'CDbl', 'CSng', 'CBool',
+      'IsEmpty', 'IsNull', 'IsNumeric', 'IsDate', 'IsArray', 'IsObject',
+      'Replace', 'Split', 'Join', 'Asc', 'Chr', 'StrComp', 'Space',
+      'FormatNumber', 'InStr', 'InStrRev',
+      // Date/Time functions
+      'Year', 'Month', 'Day', 'Hour', 'Minute', 'Second', 'Weekday',
+      'DatePart', 'MonthName', 'DateAdd', 'DateDiff', 'DateSerial',
+      'TimeSerial', 'DateValue', 'TimeValue', 'FormatDateTime', 'Timer',
+      'Now',
+      // Other VBS functions
+      'Eval', 'TypeName', 'VarType',
+      'UBound', 'LBound',
+      'Abs', 'Int', 'Fix', 'Sgn', 'Sqr', 'Rnd', 'Round', 'Hex', 'Oct',
+      // Environment/Process
+      'Environment',
+      // Node.js require (used for FSO/Shell conversions)
+      'eval',
+      // UFT object types (handled by action mapper, not runtime functions)
+      'Browser', 'Page', 'Window', 'Dialog', 'Frame',
+      'WinObject', 'WinEdit', 'WinButton', 'WinList', 'WinComboBox',
+      'WebEdit', 'WebButton', 'WebElement', 'WebList', 'WebTable',
+      'WebCheckBox', 'WebRadioGroup', 'WebFile', 'Link', 'Image',
+      // FSO/COM object methods (accessed as properties on typed objects)
+      'FileExists', 'FolderExists', 'CreateFolder', 'CopyFile', 'DeleteFile',
+      'GetFolder', 'GetFile', 'OpenTextFile', 'FileSystemObject',
+      'GetText', 'GetROProperty', 'SetTOProperty', 'GetTOProperty',
+      // Shell/COM methods
+      'Namespace', 'Run', 'Exec', 'ExpandEnvironmentStrings',
+      // Word/Excel COM methods
+      'ActiveDocument', 'Documents', 'Workbooks', 'ActiveWorkbook',
+      'Selection', 'Content',
+      // Misc VBS built-ins
+      'MsgBox', 'InputBox',
     ]);
     const funcCallPattern = /\b([A-Z]\w+)\s*\(/g;
     let funcMatch;
