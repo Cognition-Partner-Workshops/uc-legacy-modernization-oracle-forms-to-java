@@ -92,11 +92,19 @@ export class ActionMapper {
       : action.arguments;
 
     for (let i = 0; i < args.length; i++) {
-      code = code.replace(`{{ARG${i}}}`, this.cleanArgument(args[i]));
+      const cleaned = this.cleanArgument(args[i]);
+      code = code.replace(`{{ARG${i}}}`, cleaned);
     }
 
     // Replace remaining unfilled placeholders
     code = code.replace(/\{\{ARG\d+\}\}/g, '');
+
+    // Detect VBScript variables used in numeric positions like .nth(varName)
+    // and replace with a placeholder so generated TypeScript compiles
+    code = code.replace(/\.nth\(([a-zA-Z_]\w*)\)/g, (match, varName) => {
+      warnings.push(`VBScript variable '${varName}' used as index. Replace with actual value or loop variable.`);
+      return `.nth(0 /* TODO: replace '${varName}' with actual index */)`;
+    });
 
     // Clean up trailing commas or empty parens
     code = code.replace(/,\s*\)/g, ')');
