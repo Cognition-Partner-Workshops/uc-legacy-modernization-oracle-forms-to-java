@@ -12,6 +12,8 @@ export interface UFTAction {
   rawLine: string;
   parentObject?: string;
   description?: string;
+  /** Variable name when this action is the RHS of an assignment (e.g., varName = Browser(...).GetROProperty(...)) */
+  assignTo?: string;
 }
 
 /** Represents a parsed UFT script with metadata */

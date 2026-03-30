@@ -51,7 +51,34 @@ export class ScriptTransformer {
   transform(script: UFTScript): PlaywrightTestFile {
     logger.info(`Transforming script: ${script.scriptName}`);
 
-    const testBlocks = this.createTestBlocks(script);
+    // Collect variable names from Dim/Set/assignment so createTestBlocks knows
+    // which variables will be pre-declared (avoids duplicate let declarations)
+    const preDeclaredVars = new Set<string>();
+    for (const v of script.variables) {
+      preDeclaredVars.add(v.name.toLowerCase());
+    }
+
+    const testBlocks = this.createTestBlocks(script, preDeclaredVars);
+
+    // Inject VBScript variable declarations (from Dim/Set/assignment) into the first test block
+    if (script.variables.length > 0 && testBlocks.length > 0) {
+      const varDeclarations = this.transformVariables(script.variables);
+
+      if (varDeclarations.length > 0) {
+        const varActions: PlaywrightAction[] = varDeclarations.map(decl => ({
+          code: decl,
+          imports: [],
+          comments: ['// VBScript variable declaration'],
+          isAsync: false,
+          confidence: 100,
+          originalUFTLine: '',
+          warnings: [],
+        }));
+        // Prepend variable declarations to the first test block's actions
+        testBlocks[0].actions = [...varActions, ...testBlocks[0].actions];
+      }
+    }
+
     const imports = this.collectImports(testBlocks);
     const beforeEach = this.generateBeforeEach(script);
     const afterEach = this.generateAfterEach(script);
@@ -75,12 +102,15 @@ export class ScriptTransformer {
    * Create test blocks from UFT script actions.
    * Groups actions into logical test steps.
    */
-  private createTestBlocks(script: UFTScript): PlaywrightTestBlock[] {
+  private createTestBlocks(script: UFTScript, preDeclaredVars?: Set<string>): PlaywrightTestBlock[] {
     const blocks: PlaywrightTestBlock[] = [];
     let currentActions: PlaywrightAction[] = [];
     let currentAssertions: PlaywrightAction[] = [];
     const blockName = script.scriptName;
     let blockIndex = 1;
+    // Track variables assigned via assignTo to avoid const redeclaration
+    // Pre-populate with variables from Dim declarations that will be injected
+    const assignedVars = new Set<string>(preDeclaredVars || []);
 
     for (const action of script.actions) {
       // Check if this action is an assertion/verification
@@ -91,6 +121,22 @@ export class ScriptTransformer {
 
       // Map the UFT action to Playwright
       const pwAction = this.actionMapper.map(action, selector);
+
+      // If this action is an assignment (varName = Browser(...)...), wrap the code
+      if (action.assignTo && pwAction.code && !pwAction.code.startsWith('//')) {
+        const varName = action.assignTo;
+        // Strip trailing semicolons from the code before wrapping
+        let codeNoSemicolon = pwAction.code.replace(/;\s*$/, '');
+        // Avoid double-await: if the code already starts with 'await ', strip it
+        const awaitPrefix = codeNoSemicolon.startsWith('await ') ? '' : 'await ';
+        // Track declared variables to use let (not const) for re-assignments
+        if (!assignedVars.has(varName.toLowerCase())) {
+          assignedVars.add(varName.toLowerCase());
+          pwAction.code = `let ${varName} = ${awaitPrefix}${codeNoSemicolon};`;
+        } else {
+          pwAction.code = `${varName} = ${awaitPrefix}${codeNoSemicolon};`;
+        }
+      }
 
       // Add original line as comment if configured
       if (this.config.preserveComments) {
@@ -286,9 +332,11 @@ export class ScriptTransformer {
       const keyword = v.type === 'Const' ? 'const' : 'let';
       if (v.initialValue) {
         const tsValue = this.vbToTsValue(v.initialValue);
-        return `${keyword} ${this.toCamelCase(v.name)} = ${tsValue};`;
+        // Use ': any' annotation to accept reassignment from Playwright methods (string|null|number)
+        return `${keyword} ${this.toCamelCase(v.name)}: any = ${tsValue};`;
       }
-      return `${keyword} ${this.toCamelCase(v.name)}: string;`;
+      // Use 'any' type to accept string, number, null from Playwright methods
+      return `${keyword} ${this.toCamelCase(v.name)}: any;`;
     });
   }
 
@@ -491,7 +539,11 @@ export class ScriptTransformer {
 
     if (hasConcatenation) {
       value = value.replace(/(?<!&)\s*&(?!&)\s*/g, ' + ');
-      value = value.replace(/"([^"]*)"/g, "'$1'");
+      // Replace VBS double-quoted strings with single-quoted, handling "" escape sequences
+      value = value.replace(/"((?:[^"]|"")*)"/g, (_, inner) => {
+        const unescaped = inner.replace(/""/g, '"');
+        return "'" + unescaped.replace(/'/g, "\\'") + "'";
+      });
       return value;
     }
 
@@ -499,7 +551,11 @@ export class ScriptTransformer {
       return value;
     }
 
-    value = value.replace(/"([^"]*)"/g, "'$1'");
+    // Replace VBS double-quoted strings with single-quoted, handling "" escape sequences
+    value = value.replace(/"((?:[^"]|"")*)"/g, (_, inner) => {
+      const unescaped = inner.replace(/""/g, '"');
+      return "'" + unescaped.replace(/'/g, "\\'") + "'";
+    });
     return value;
   }
 

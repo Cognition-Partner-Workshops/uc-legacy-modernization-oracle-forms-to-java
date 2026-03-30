@@ -829,7 +829,7 @@ export class ConverterEngine {
       if (action.objectType === 'Utility' &&
           (action.method === 'ExecuteFile' || action.method === 'LoadFunctionLibrary') &&
           action.arguments.length > 0) {
-        const libRef = action.arguments[0];
+        const libRef = action.arguments[0].replace(/^"|"$/g, '');
         // Try to match by file name or base name
         const libBaseName = path.basename(libRef);
         const libNameNoExt = libBaseName.replace(/\.(vbs|qfl|mts|txt)$/i, '');

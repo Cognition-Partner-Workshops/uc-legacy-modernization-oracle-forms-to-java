@@ -118,7 +118,9 @@ export class ActionMapper {
 
     for (let i = 0; i < args.length; i++) {
       const cleaned = this.cleanArgument(args[i]);
-      code = code.replace(`{{ARG${i}}}`, cleaned);
+      // Replace ALL occurrences of the placeholder (some templates use the same arg twice)
+      const argPattern = new RegExp(`\\{\\{ARG${i}\\}\\}`, 'g');
+      code = code.replace(argPattern, cleaned);
     }
 
     // Replace remaining unfilled placeholders
@@ -199,17 +201,77 @@ export class ActionMapper {
 
   /**
    * Clean a VBScript argument value for use in TypeScript.
+   * Handles VBScript string concatenation with & operator.
    */
-  private cleanArgument(arg: string): string {
-    if (!arg) return '';
+  /** VBScript Reporter event type constants → string literals */
+  private static readonly VBS_CONSTANTS: Record<string, string> = {
+    micpass: "'micPass'",
+    micfail: "'micFail'",
+    micdone: "'micDone'",
+    micwarning: "'micWarning'",
+    micinfo: "'micInfo'",
+  };
 
-    // Remove surrounding quotes if present
+  private cleanArgument(arg: string): string {
+    if (!arg) return "''";
+
     let cleaned = arg.trim();
+
+    // Convert known VBScript constants to string literals
+    const lower = cleaned.toLowerCase();
+    if (ActionMapper.VBS_CONSTANTS[lower]) {
+      return ActionMapper.VBS_CONSTANTS[lower];
+    }
+
+    // Check if the argument contains VBScript & concatenation
+    // (outside of a simple quoted string)
+    const concatPattern = /(?<!&)\s*&(?!&)\s*/;
+    if (concatPattern.test(cleaned)) {
+      return this.convertVbsConcatToTs(cleaned);
+    }
+
+    // Convert VBScript double-quoted strings to JS single-quoted strings
     if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
-      cleaned = cleaned.slice(1, -1);
+      const inner = cleaned.slice(1, -1).replace(/'/g, "\\'");
+      return "'" + inner + "'";
     }
 
     return cleaned;
+  }
+
+  /**
+   * Convert a VBScript string expression with & concatenation to TypeScript.
+   * e.g. '"hello " & name & "!"' -> '`hello ${name}!`'
+   */
+  private convertVbsConcatToTs(value: string): string {
+    const parts = value.split(/(?<!&)\s*&(?!&)\s*/);
+    const hasInnerSingleQuotes = /"[^"]*'[^"]*"/.test(value);
+
+    if (hasInnerSingleQuotes) {
+      // Use template literal to avoid quote conflicts
+      let template = '`';
+      for (const part of parts) {
+        const trimmed = part.trim();
+        if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+          const content = trimmed.slice(1, -1).replace(/""/g, '"').replace(/`/g, '\\`');
+          template += content;
+        } else {
+          template += '${' + trimmed + '}';
+        }
+      }
+      template += '`';
+      return template;
+    }
+
+    // Use + concatenation with single-quoted strings
+    const tsParts = parts.map(p => {
+      const trimmed = p.trim();
+      if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+        return "'" + trimmed.slice(1, -1) + "'";
+      }
+      return trimmed;
+    });
+    return tsParts.join(' + ');
   }
 
   /**
@@ -221,7 +283,7 @@ export class ActionMapper {
 
       Browser: {
         Navigate: {
-          playwright: "await page.goto('{{ARG0}}')",
+          playwright: "await page.goto({{ARG0}})",
           isAsync: true,
           imports: [],
           needsSelector: false,
@@ -288,7 +350,7 @@ export class ActionMapper {
           confidence: 85,
         },
         CheckProperty: {
-          playwright: "await expect(page).toHaveTitle(/{{ARG1}}/)",
+          playwright: "await expect(page).toHaveTitle(new RegExp({{ARG1}}))",
           isAsync: true,
           imports: ['expect'],
           needsSelector: false,
@@ -299,14 +361,14 @@ export class ActionMapper {
 
       WebEdit: {
         Set: {
-          playwright: "await page.locator({{SELECTOR}}).fill('{{ARG0}}')",
+          playwright: "await page.locator({{SELECTOR}}).fill({{ARG0}})",
           isAsync: true,
           imports: [],
           needsSelector: true,
           confidence: 95,
         },
         SetSecure: {
-          playwright: "await page.locator({{SELECTOR}}).fill('{{ARG0}}')",
+          playwright: "await page.locator({{SELECTOR}}).fill({{ARG0}})",
           isAsync: true,
           imports: [],
           needsSelector: true,
@@ -321,21 +383,21 @@ export class ActionMapper {
           confidence: 95,
         },
         Type: {
-          playwright: "await page.locator({{SELECTOR}}).pressSequentially('{{ARG0}}')",
+          playwright: "await page.locator({{SELECTOR}}).pressSequentially({{ARG0}})",
           isAsync: true,
           imports: [],
           needsSelector: true,
           confidence: 90,
         },
         GetROProperty: {
-          playwright: "await page.locator({{SELECTOR}}).getAttribute('{{ARG0}}')",
+          playwright: "await page.locator({{SELECTOR}}).getAttribute({{ARG0}})",
           isAsync: true,
           imports: [],
           needsSelector: true,
           confidence: 80,
         },
         CheckProperty: {
-          playwright: "await expect(page.locator({{SELECTOR}})).toHaveAttribute('{{ARG0}}', '{{ARG1}}')",
+          playwright: "await expect(page.locator({{SELECTOR}})).toHaveAttribute({{ARG0}}, {{ARG1}})",
           isAsync: true,
           imports: ['expect'],
           needsSelector: true,
@@ -374,7 +436,7 @@ export class ActionMapper {
           notes: 'UFT Submit maps to click in Playwright. Form submission is automatic.',
         },
         GetROProperty: {
-          playwright: "await page.locator({{SELECTOR}}).getAttribute('{{ARG0}}')",
+          playwright: "await page.locator({{SELECTOR}}).getAttribute({{ARG0}})",
           isAsync: true,
           imports: [],
           needsSelector: true,
@@ -388,7 +450,7 @@ export class ActionMapper {
           confidence: 85,
         },
         CheckProperty: {
-          playwright: "await expect(page.locator({{SELECTOR}})).toHaveAttribute('{{ARG0}}', '{{ARG1}}')",
+          playwright: "await expect(page.locator({{SELECTOR}})).toHaveAttribute({{ARG0}}, {{ARG1}})",
           isAsync: true,
           imports: ['expect'],
           needsSelector: true,
@@ -405,14 +467,14 @@ export class ActionMapper {
 
       WebList: {
         Select: {
-          playwright: "await page.locator({{SELECTOR}}).selectOption('{{ARG0}}')",
+          playwright: "await page.locator({{SELECTOR}}).selectOption({{ARG0}})",
           isAsync: true,
           imports: [],
           needsSelector: true,
           confidence: 90,
         },
         GetROProperty: {
-          playwright: "await page.locator({{SELECTOR}}).getAttribute('{{ARG0}}')",
+          playwright: "await page.locator({{SELECTOR}}).getAttribute({{ARG0}})",
           isAsync: true,
           imports: [],
           needsSelector: true,
@@ -464,14 +526,14 @@ export class ActionMapper {
 
       WebRadioGroup: {
         Select: {
-          playwright: "await page.locator({{SELECTOR}}).locator(`[value='{{ARG0}}']`).check()",
+          playwright: 'await page.locator({{SELECTOR}}).locator(`[value=${{{ARG0}}}]`).check()',
           isAsync: true,
           imports: [],
           needsSelector: true,
           confidence: 80,
         },
         GetROProperty: {
-          playwright: "await page.locator({{SELECTOR}}).getAttribute('{{ARG0}}')",
+          playwright: "await page.locator({{SELECTOR}}).getAttribute({{ARG0}})",
           isAsync: true,
           imports: [],
           needsSelector: true,
@@ -496,7 +558,7 @@ export class ActionMapper {
           confidence: 80,
         },
         ChildItem: {
-          playwright: "await page.locator({{SELECTOR}}).locator('tr').nth({{ARG0}}).locator('td').nth({{ARG1}}).locator('{{ARG2}}').click()",
+          playwright: "await page.locator({{SELECTOR}}).locator('tr').nth({{ARG0}}).locator('td').nth({{ARG1}}).locator({{ARG2}}).click()",
           isAsync: true,
           imports: [],
           needsSelector: true,
@@ -504,7 +566,7 @@ export class ActionMapper {
           notes: 'ChildItem mapping varies greatly. Manual review recommended.',
         },
         GetCellProperty: {
-          playwright: "await page.locator({{SELECTOR}}).locator('tr').nth({{ARG0}}).locator('td').nth({{ARG1}}).getAttribute('{{ARG2}}')",
+          playwright: "await page.locator({{SELECTOR}}).locator('tr').nth({{ARG0}}).locator('td').nth({{ARG1}}).getAttribute({{ARG2}})",
           isAsync: true,
           imports: [],
           needsSelector: true,
@@ -518,7 +580,7 @@ export class ActionMapper {
           confidence: 85,
         },
         GetROProperty: {
-          playwright: "await page.locator({{SELECTOR}}).getAttribute('{{ARG0}}')",
+          playwright: "await page.locator({{SELECTOR}}).getAttribute({{ARG0}})",
           isAsync: true,
           imports: [],
           needsSelector: true,
@@ -536,7 +598,7 @@ export class ActionMapper {
           confidence: 95,
         },
         GetROProperty: {
-          playwright: "await page.locator({{SELECTOR}}).getAttribute('{{ARG0}}')",
+          playwright: "await page.locator({{SELECTOR}}).getAttribute({{ARG0}})",
           isAsync: true,
           imports: [],
           needsSelector: true,
@@ -570,14 +632,14 @@ export class ActionMapper {
           confidence: 90,
         },
         Set: {
-          playwright: "await page.locator({{SELECTOR}}).fill('{{ARG0}}')",
+          playwright: "await page.locator({{SELECTOR}}).fill({{ARG0}})",
           isAsync: true,
           imports: [],
           needsSelector: true,
           confidence: 85,
         },
         GetROProperty: {
-          playwright: "await page.locator({{SELECTOR}}).getAttribute('{{ARG0}}')",
+          playwright: "await page.locator({{SELECTOR}}).getAttribute({{ARG0}})",
           isAsync: true,
           imports: [],
           needsSelector: true,
@@ -591,7 +653,7 @@ export class ActionMapper {
           confidence: 90,
         },
         FireEvent: {
-          playwright: "await page.locator({{SELECTOR}}).dispatchEvent('{{ARG0}}')",
+          playwright: "await page.locator({{SELECTOR}}).dispatchEvent({{ARG0}})",
           isAsync: true,
           imports: [],
           needsSelector: true,
@@ -644,7 +706,7 @@ export class ActionMapper {
           confidence: 80,
         },
         SetText: {
-          playwright: "page.on('dialog', dialog => dialog.accept('{{ARG0}}'))",
+          playwright: "page.on('dialog', dialog => dialog.accept({{ARG0}}))",
           isAsync: false,
           imports: [],
           needsSelector: false,
@@ -663,7 +725,7 @@ export class ActionMapper {
 
       Reporter: {
         ReportEvent: {
-          playwright: "// Assertion: {{ARG1}} - {{ARG2}}\nconsole.log('[{{ARG0}}] {{ARG1}}: {{ARG2}}')",
+          playwright: "// Assertion: {{ARG1}} - {{ARG2}}\nconsole.log(`[${{{ARG0}}}] ${{{ARG1}}}: ` + {{ARG2}})",
           isAsync: false,
           imports: [],
           needsSelector: false,
@@ -729,7 +791,7 @@ export class ActionMapper {
 
       SystemUtil: {
         Run: {
-          playwright: "await page.goto('{{ARG0}}')",
+          playwright: "await page.goto({{ARG0}})",
           isAsync: true,
           imports: [],
           needsSelector: false,
@@ -779,7 +841,7 @@ export class ActionMapper {
 
       WinEdit: {
         Set: {
-          playwright: "// TODO: Desktop WinEdit.Set - not supported in Playwright\n// Original: {{SELECTOR}}.Set '{{ARG0}}'",
+          playwright: "// TODO: Desktop WinEdit.Set - not supported in Playwright\n// Original: {{SELECTOR}}.Set {{ARG0}}",
           isAsync: false,
           imports: [],
           needsSelector: false,

@@ -42,6 +42,12 @@ export class PlaywrightGenerator {
       sections.push(testFile.helperFunctions.join('\n\n'));
     }
 
+    // Add VBScript runtime stubs if needed (DataTable, dtGlobalSheet, etc.)
+    const runtimeStubs = this.generateRuntimeStubs(testFile);
+    if (runtimeStubs) {
+      sections.push(runtimeStubs);
+    }
+
     // Test describe block
     sections.push(this.generateTestDescribe(testFile));
 
@@ -120,10 +126,94 @@ export class PlaywrightGenerator {
       const block = testFile.testBlocks[i];
       if (i > 0) lines.push('');
 
+      // Collect all code lines for this block to detect undeclared variables
+      const blockCodeLines: string[] = [];
+      for (const action of [...block.actions, ...block.assertions]) {
+        blockCodeLines.push(action.code);
+      }
+      const blockCode = blockCodeLines.join('\n');
+
+      // Build a map of variable declaration positions (line index in blockCodeLines)
+      const declaredVarPositions = new Map<string, number>();
+      for (let li = 0; li < blockCodeLines.length; li++) {
+        const declPatternLine = /\b(?:let|const|var)\s+(\w+)/g;
+        let dm;
+        while ((dm = declPatternLine.exec(blockCodeLines[li])) !== null) {
+          if (!declaredVarPositions.has(dm[1])) {
+            declaredVarPositions.set(dm[1], li);
+          }
+        }
+      }
+      const declaredVars = new Set(declaredVarPositions.keys());
+
+      // Also add Playwright/test globals and common JS globals
+      const globals = new Set(['page', 'expect', 'test', 'console', 'require',
+        'parseInt', 'parseFloat', 'String', 'Number', 'Boolean', 'JSON',
+        'Array', 'Object', 'Date', 'Math', 'Promise', 'Error', 'RegExp',
+        'Map', 'Set', 'undefined', 'null', 'true', 'false', 'NaN', 'Infinity',
+        'setTimeout', 'setInterval', 'Request', 'Response', 'Headers', 'URL',
+        'i', 'j', 'k', // common loop vars
+      ]);
+
+      // Find variable references that aren't declared or are used before declaration
+      const undeclaredVars = new Set<string>();
+
+      for (let li = 0; li < blockCodeLines.length; li++) {
+        const lineCode = blockCodeLines[li];
+
+        // Check template literal interpolations: ${varName}
+        const templateVarPattern = /\$\{(\w+)\}/g;
+        let tvMatch;
+        while ((tvMatch = templateVarPattern.exec(lineCode)) !== null) {
+          const name = tvMatch[1];
+          if (globals.has(name)) continue;
+          if (!declaredVars.has(name) || (declaredVarPositions.get(name) ?? 0) > li) {
+            undeclaredVars.add(name);
+          }
+        }
+        // Check concatenation expressions: + varName (at end of expression or before +)
+        const concatVarPattern = /\+\s+([a-zA-Z_]\w*)/g;
+        let cvMatch;
+        while ((cvMatch = concatVarPattern.exec(lineCode)) !== null) {
+          const name = cvMatch[1];
+          if (globals.has(name) || /^\d+$/.test(name)) continue;
+          // Skip string literals like 'text'
+          if (name === 'await' || name === 'async') continue;
+          if (!declaredVars.has(name) || (declaredVarPositions.get(name) ?? 0) > li) {
+            undeclaredVars.add(name);
+          }
+        }
+        // Check .fill(varName) and similar method args with bare identifiers
+        const argVarPattern = /\.(?:fill|type|selectOption)\(([a-zA-Z_]\w*)\)/g;
+        let avMatch;
+        while ((avMatch = argVarPattern.exec(lineCode)) !== null) {
+          const name = avMatch[1];
+          if (globals.has(name) || /^\d+$/.test(name)) continue;
+          if (!declaredVars.has(name) || (declaredVarPositions.get(name) ?? 0) > li) {
+            undeclaredVars.add(name);
+          }
+        }
+      }
+
       lines.push(`  test('${this.escapeString(block.name)}', async ({ page }) => {`);
+
+      // Add declarations for undeclared variables at the top of the test block
+      if (undeclaredVars.size > 0) {
+        for (const varName of undeclaredVars) {
+          lines.push(`    let ${varName}: any; // TODO: Initialize this variable`);
+        }
+      }
 
       // Actions
       for (const action of block.actions) {
+        // If this action declares a variable that we already added as undeclared stub,
+        // convert the declaration to a plain assignment
+        if (undeclaredVars.size > 0) {
+          const letRedeclMatch = action.code.match(/^let\s+(\w+)\s*=/);
+          if (letRedeclMatch && undeclaredVars.has(letRedeclMatch[1])) {
+            action.code = action.code.replace(/^let\s+/, '');
+          }
+        }
         const actionLines = this.generateAction(action);
         for (const line of actionLines) {
           lines.push(`    ${line}`);
@@ -135,6 +225,12 @@ export class PlaywrightGenerator {
         lines.push('');
         lines.push('    // Assertions');
         for (const assertion of block.assertions) {
+          if (undeclaredVars.size > 0) {
+            const letRedeclMatch = assertion.code.match(/^let\s+(\w+)\s*=/);
+            if (letRedeclMatch && undeclaredVars.has(letRedeclMatch[1])) {
+              assertion.code = assertion.code.replace(/^let\s+/, '');
+            }
+          }
           const assertionLines = this.generateAction(assertion);
           for (const line of assertionLines) {
             lines.push(`    ${line}`);
@@ -349,6 +445,73 @@ ${projects.join(',\n')}
     lines.push("export { expect } from '@playwright/test';");
 
     return lines.join('\n') + '\n';
+  }
+
+  /**
+   * Generate VBScript runtime stub declarations when the generated code
+   * uses VBScript constructs like DataTable, dtGlobalSheet, etc.
+   */
+  private generateRuntimeStubs(testFile: PlaywrightTestFile): string | null {
+    // Serialize all action code to check for VBScript runtime references
+    const allCode = testFile.testBlocks
+      .flatMap(b => [...b.actions, ...b.assertions])
+      .map(a => a.code)
+      .join('\n');
+
+    const stubs: string[] = [];
+
+    if (allCode.includes('DataTable(') || allCode.includes('DataTable.')) {
+      stubs.push('// TODO: Replace DataTable references with Playwright test data fixtures');
+      stubs.push('// See https://playwright.dev/docs/test-parameterize for data-driven testing');
+      stubs.push('const dtGlobalSheet = 0; // UFT DataTable global sheet constant');
+      stubs.push('function DataTable(column: string, sheet?: number | string): string {');
+      stubs.push("  return `TODO_DataTable_\${column}`; // Replace with actual test data");
+      stubs.push('}');
+    }
+
+    if (allCode.includes('CreateObject(')) {
+      stubs.push('// TODO: Replace CreateObject calls with appropriate Playwright/Node.js equivalents');
+      stubs.push('function CreateObject(progId: string): Record<string, unknown> {');
+      stubs.push("  return {}; // Stub for VBScript CreateObject('\" + progId + \"')");
+      stubs.push('}');
+    }
+
+    // Detect undeclared function calls: identifiers followed by ( that aren't
+    // known JS/TS/Playwright globals and aren't already declared as helpers
+    const helperNames = new Set<string>();
+    if (testFile.helperFunctions) {
+      for (const h of testFile.helperFunctions) {
+        const funcMatch = h.match(/function\s+(\w+)/);
+        if (funcMatch) helperNames.add(funcMatch[1]);
+      }
+    }
+
+    // Find function calls that aren't known globals and aren't helpers
+    const knownFuncs = new Set([
+      'console', 'page', 'expect', 'test', 'require', 'import',
+      'parseInt', 'parseFloat', 'String', 'Number', 'Boolean',
+      'setTimeout', 'setInterval', 'JSON', 'Array', 'Object',
+      'Date', 'Math', 'Promise', 'Error', 'RegExp', 'Map', 'Set',
+      'DataTable', 'CreateObject', // already stubbed above
+    ]);
+    const funcCallPattern = /\b([A-Z]\w+)\s*\(/g;
+    let funcMatch;
+    const undeclaredFuncs = new Set<string>();
+    while ((funcMatch = funcCallPattern.exec(allCode)) !== null) {
+      const name = funcMatch[1];
+      if (!knownFuncs.has(name) && !helperNames.has(name) && !name.startsWith('TODO')) {
+        undeclaredFuncs.add(name);
+      }
+    }
+
+    for (const funcName of undeclaredFuncs) {
+      stubs.push(`// TODO: Implement or import '${funcName}' — converted from VBScript function call`);
+      stubs.push(`function ${funcName}(...args: unknown[]): string {`);
+      stubs.push(`  return ''; // Stub for VBScript ${funcName}()`);
+      stubs.push('}');
+    }
+
+    return stubs.length > 0 ? stubs.join('\n') : null;
   }
 
   // ==================== String utilities ====================

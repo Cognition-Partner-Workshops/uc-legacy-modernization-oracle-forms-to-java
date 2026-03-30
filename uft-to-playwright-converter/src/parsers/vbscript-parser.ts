@@ -263,23 +263,33 @@ export class VBScriptParser {
    *   Browser("name").Page("name").WebTable("name").GetCellData(row, col)
    */
   parseAction(line: string, lineNumber: number): UFTAction | null {
+    // Detect assignment pattern: varName = Browser(...)...
+    // Extract the variable name if present, and parse the RHS as the action
+    let assignTo: string | undefined;
+    let actionLine = line;
+    const assignMatch = line.match(/^(\w+)\s*=\s*((?:Browser|Dialog|Window|SwfWindow|JavaWindow|WpfWindow)\s*\(.+)/i);
+    if (assignMatch) {
+      assignTo = assignMatch[1];
+      actionLine = assignMatch[2];
+    }
+
     // Match UFT object hierarchy patterns
     // e.g., Browser("B").Page("P").WebEdit("E").Set "value"
     const objectPattern =
       /^(?:.*?\b)?(Browser|Dialog|Window|SwfWindow|JavaWindow|WpfWindow)\s*\(\s*"([^"]*)"\s*\)/i;
 
-    if (!objectPattern.test(line)) {
+    if (!objectPattern.test(actionLine)) {
       // Also try descriptive programming: Browser("micclass:=Browser")
       const descProgPattern =
         /^(?:.*?\b)?(Browser|Dialog|Window|SwfWindow|JavaWindow|WpfWindow)\s*\(\s*"(\w+:=.*?)"\s*\)/i;
-      if (!descProgPattern.test(line)) {
+      if (!descProgPattern.test(actionLine)) {
         // Check for standalone object methods like Reporter.ReportEvent, SystemUtil, etc.
         return this.parseUtilityAction(line, lineNumber);
       }
     }
 
     // Extract the full object chain and final method call
-    const chainParts = this.parseObjectChain(line);
+    const chainParts = this.parseObjectChain(actionLine);
     if (!chainParts || chainParts.length === 0) return null;
 
     const lastPart = chainParts[chainParts.length - 1];
@@ -317,6 +327,7 @@ export class VBScriptParser {
       arguments: args,
       rawLine: line,
       parentObject: parentParts.length > 0 ? parentParts.join('.') : undefined,
+      assignTo,
     };
   }
 
@@ -374,8 +385,9 @@ export class VBScriptParser {
    */
   private parseUtilityAction(line: string, lineNumber: number): UFTAction | null {
     // Reporter.ReportEvent micPass, "Step", "Description"
+    // Support both simple strings and concatenated expressions in the third argument
     const reporterMatch = line.match(
-      /Reporter\.ReportEvent\s+(mic\w+)\s*,\s*"([^"]*)"\s*,\s*"([^"]*)"/i
+      /Reporter\.ReportEvent\s+(mic\w+)\s*,\s*"([^"]*)"\s*,\s*(.+)/i
     );
     if (reporterMatch) {
       return {
@@ -383,7 +395,7 @@ export class VBScriptParser {
         objectType: 'Reporter',
         objectName: 'Reporter',
         method: 'ReportEvent',
-        arguments: [reporterMatch[1], reporterMatch[2], reporterMatch[3]],
+        arguments: [reporterMatch[1], '"' + reporterMatch[2] + '"', reporterMatch[3].trim()],
         rawLine: line,
       };
     }
@@ -402,7 +414,7 @@ export class VBScriptParser {
     }
 
     // SystemUtil.Run "application"
-    const sysUtilMatch = line.match(/SystemUtil\.Run\s+"([^"]*)"/i);
+    const sysUtilMatch = line.match(/SystemUtil\.Run\s+("[^"]*")/i);
     if (sysUtilMatch) {
       return {
         lineNumber,
@@ -441,7 +453,7 @@ export class VBScriptParser {
     }
 
     // ExecuteFile
-    const execFileMatch = line.match(/ExecuteFile\s+"([^"]*)"/i);
+    const execFileMatch = line.match(/ExecuteFile\s+("[^"]*")/i);
     if (execFileMatch) {
       return {
         lineNumber,
@@ -454,7 +466,7 @@ export class VBScriptParser {
     }
 
     // LoadFunctionLibrary "path\to\library.vbs"
-    const loadLibMatch = line.match(/LoadFunctionLibrary\s+"([^"]*)"/i);
+    const loadLibMatch = line.match(/LoadFunctionLibrary\s+("[^"]*")/i);
     if (loadLibMatch) {
       return {
         lineNumber,
