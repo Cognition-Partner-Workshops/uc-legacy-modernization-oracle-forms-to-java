@@ -60,7 +60,7 @@ export class ActionMapper {
       return this.createUnmappedAction(action, `Unsupported object type: ${action.objectType}`);
     }
 
-    const methodMapping = objectMappings[action.method];
+    const methodMapping = objectMappings[action.method] || objectMappings['_default'];
     if (!methodMapping) {
       return this.createUnmappedAction(
         action,
@@ -86,10 +86,35 @@ export class ActionMapper {
     const sel = selector || this.inferSelector(action);
     code = code.replace('{{SELECTOR}}', sel);
 
+    // Replace method name placeholder (for FunctionCall mappings)
+    if (code.includes('{{METHOD}}')) {
+      const camelMethod = action.method.charAt(0).toLowerCase() + action.method.slice(1);
+      code = code.replace('{{METHOD}}', camelMethod);
+    }
+
     // Replace argument placeholders
     const args = mapping.argTransform
       ? mapping.argTransform(action.arguments)
       : action.arguments;
+
+    // Replace {{ARGS}} placeholder with all arguments joined
+    if (code.includes('{{ARGS}}')) {
+      const quotedArgs = args.map(a => {
+        const trimmed = a.trim();
+        // If already quoted, convert to single-quoted TS string
+        if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+          return `'${trimmed.slice(1, -1)}'`;
+        }
+        // Numbers pass through as-is
+        if (/^\d+$/.test(trimmed)) return trimmed;
+        // Variable references pass through as-is
+        return trimmed;
+      });
+      const argsStr = quotedArgs.length > 0 ? quotedArgs.join(', ') : '';
+      code = code.replace('{{ARGS}}', argsStr);
+      // Clean up empty args: (page, ) -> (page)
+      code = code.replace(/,\s*\)/g, ')');
+    }
 
     for (let i = 0; i < args.length; i++) {
       const cleaned = this.cleanArgument(args[i]);
@@ -672,12 +697,33 @@ export class ActionMapper {
           confidence: 85,
         },
         ExecuteFile: {
-          playwright: "// TODO: ExecuteFile('{{ARG0}}') - Import the converted module\nimport { /* functions */ } from './{{ARG0}}'",
+          playwright: "// Function library '{{ARG0}}' loaded - see helpers/ folder for converted functions",
           isAsync: false,
           imports: [],
           needsSelector: false,
-          confidence: 30,
-          notes: 'ExecuteFile needs manual import of converted module.',
+          confidence: 80,
+          notes: 'ExecuteFile loads a function library. Functions are converted to helpers/ modules.',
+        },
+        LoadFunctionLibrary: {
+          playwright: "// Function library '{{ARG0}}' loaded - see helpers/ folder for converted functions",
+          isAsync: false,
+          imports: [],
+          needsSelector: false,
+          confidence: 80,
+          notes: 'LoadFunctionLibrary loads a function library. Functions are converted to helpers/ modules.',
+        },
+      },
+
+      // ==================== FUNCTION CALLS ====================
+      // VBScript Call statements and standalone function calls
+      FunctionCall: {
+        _default: {
+          playwright: 'await {{METHOD}}(page, {{ARGS}});',
+          isAsync: true,
+          imports: [],
+          needsSelector: false,
+          confidence: 75,
+          notes: 'Function call from library. Import will be auto-generated.',
         },
       },
 

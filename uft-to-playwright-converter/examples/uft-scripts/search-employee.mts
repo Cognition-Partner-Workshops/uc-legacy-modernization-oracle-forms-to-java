@@ -1,20 +1,19 @@
 ' UFT Script: Search Employee (.mts format)
 ' This is a UFT action script stored as .mts
+' Uses common function library for Login/Logout
 
-' Login first
-Browser("HRMS").Page("Login").WebEdit("txtUsername").Set "admin"
-Browser("HRMS").Page("Login").WebEdit("txtPassword").SetSecure "encrypted_pwd"
-Browser("HRMS").Page("Login").WebButton("btnLogin").Click
-Wait 2
+' Load common function library
+ExecuteFile "common-functions.vbs"
+
+' Login using library function
+Call Login("admin", "encrypted_pwd")
 
 ' Navigate to Employee Search
 Browser("HRMS").Page("Dashboard").Link("lnkEmployees").Click
 Wait 1
 
-' Search by name
-Browser("HRMS").Page("Employee List").WebEdit("txtSearch").Set "John"
-Browser("HRMS").Page("Employee List").WebButton("btnSearch").Click
-Wait 2
+' Search using library function
+resultCount = SearchEmployee("John")
 
 ' Verify results
 Browser("HRMS").Page("Employee List").WebTable("tblResults").Exist(10)
@@ -35,5 +34,8 @@ Wait 2
 ' Verify success message
 Browser("HRMS").Page("Employee Form").WebElement("msgSuccess").Exist(5)
 
-' Logout
-Browser("HRMS").Page("Employee Form").Link("lnkLogout").Click
+' Verify page title using library function
+Call VerifyPageTitle("Employee Details - HRMS")
+
+' Logout using library function
+Call Logout()

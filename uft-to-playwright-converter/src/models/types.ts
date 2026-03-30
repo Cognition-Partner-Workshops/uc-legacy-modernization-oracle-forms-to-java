@@ -84,6 +84,8 @@ export interface PlaywrightTestFile {
   testBlocks: PlaywrightTestBlock[];
   pageObjectRefs: string[];
   fixtures: string[];
+  /** Inline helper functions converted from script-internal Sub/Function definitions */
+  helperFunctions?: string[];
 }
 
 /** Represents a test block within a Playwright file */

@@ -453,6 +453,52 @@ export class VBScriptParser {
       };
     }
 
+    // LoadFunctionLibrary "path\to\library.vbs"
+    const loadLibMatch = line.match(/LoadFunctionLibrary\s+"([^"]*)"/i);
+    if (loadLibMatch) {
+      return {
+        lineNumber,
+        objectType: 'Utility',
+        objectName: 'LoadFunctionLibrary',
+        method: 'LoadFunctionLibrary',
+        arguments: [loadLibMatch[1]],
+        rawLine: line,
+      };
+    }
+
+    // Call FuncName(args) or Call FuncName
+    const callMatch = line.match(/^\s*Call\s+(\w+)\s*(?:\((.*)\))?\s*$/i);
+    if (callMatch) {
+      const funcArgs = callMatch[2] ? this.parseArguments(callMatch[2]) : [];
+      return {
+        lineNumber,
+        objectType: 'FunctionCall',
+        objectName: callMatch[1],
+        method: callMatch[1],
+        arguments: funcArgs,
+        rawLine: line,
+      };
+    }
+
+    // Standalone function call: FuncName(args) or FuncName "arg" (without Call keyword)
+    // Only match if line starts with a word followed by ( and is NOT a known keyword
+    const standaloneFuncMatch = line.match(/^\s*(\w+)\s*\((.*)\)\s*$/i);
+    if (standaloneFuncMatch) {
+      const funcName = standaloneFuncMatch[1];
+      const keywords = new Set(['If', 'ElseIf', 'For', 'While', 'Do', 'Select', 'Case', 'Dim', 'Set', 'Const', 'ReDim', 'Exit', 'End', 'Function', 'Sub', 'Public', 'Private']);
+      if (!keywords.has(funcName) && !this.isObjectCall(line)) {
+        const funcArgs = this.parseArguments(standaloneFuncMatch[2]);
+        return {
+          lineNumber,
+          objectType: 'FunctionCall',
+          objectName: funcName,
+          method: funcName,
+          arguments: funcArgs,
+          rawLine: line,
+        };
+      }
+    }
+
     return null;
   }
 

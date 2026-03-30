@@ -23,7 +23,7 @@ import {
 import { VBScriptParser } from './parsers/vbscript-parser';
 import { ObjectRepositoryParser } from './parsers/object-repository-parser';
 import { ScriptTransformer } from './transformers/script-transformer';
-
+import { ActionMapper } from './transformers/action-mapper';
 import { PlaywrightGenerator } from './generators/playwright-generator';
 import { PageObjectGenerator } from './generators/page-object-generator';
 import { ScriptAnalyzer } from './analyzers/script-analyzer';
@@ -45,6 +45,10 @@ export class ConverterEngine {
   private generator: PlaywrightGenerator;
   private pageObjectGenerator: PageObjectGenerator;
   private analyzer: ScriptAnalyzer;
+  /** Maps library file base name -> converted helper module name */
+  private libraryModules: Map<string, string> = new Map();
+  /** Maps library file base name -> list of exported function names */
+  private libraryFunctions: Map<string, string[]> = new Map();
 
   constructor(config: ConversionConfig) {
     this.config = config;
@@ -90,14 +94,26 @@ export class ConverterEngine {
     logger.info('Step 2: Loading Object Repositories...');
     await this.loadObjectRepositories();
 
-    // Step 3: Parse and convert each script
+    // Step 2.5: Identify and convert function library files
+    logger.info('Step 2.5: Processing function libraries...');
+    const { libraries, testScripts } = this.separateLibraries(scriptFiles);
+    if (libraries.length > 0) {
+      logger.info(`Found ${libraries.length} function library file(s)`);
+      ensureDir(path.join(this.config.outputDir, 'tests', 'helpers'));
+      for (const libFile of libraries) {
+        this.convertLibraryFile(libFile);
+      }
+    }
+    logger.info(`Found ${testScripts.length} test script file(s)`);
+
+    // Step 3: Parse and convert each test script
     logger.info('Step 3: Converting scripts...');
     const details: ConversionDetail[] = [];
     const allPageRefs = new Set<string>();
 
-    for (let i = 0; i < scriptFiles.length; i++) {
-      const scriptFile = scriptFiles[i];
-      const progress = `[${i + 1}/${scriptFiles.length}]`;
+    for (let i = 0; i < testScripts.length; i++) {
+      const scriptFile = testScripts[i];
+      const progress = `[${i + 1}/${testScripts.length}]`;
       logger.info(`${progress} Processing: ${path.basename(scriptFile)}`);
 
       const detail = await this.convertSingleScript(scriptFile);
@@ -146,7 +162,7 @@ export class ConverterEngine {
           rootDir: '.',
           types: ['node'],
         },
-        include: ['tests/**/*.ts', 'playwright.config.ts'],
+        include: ['tests/**/*.ts', 'tests/helpers/**/*.ts', 'playwright.config.ts'],
       }, null, 2) + '\n'
     );
 
@@ -249,6 +265,26 @@ export class ConverterEngine {
 
       // Transform
       const testFile = this.transformer.transform(script);
+
+      // Inject library imports based on ExecuteFile/LoadFunctionLibrary/FunctionCall actions
+      const libraryImports = this.resolveLibraryImports(script);
+      if (libraryImports.length > 0) {
+        for (const imp of libraryImports) {
+          testFile.imports.push(imp);
+        }
+      }
+
+      // Generate inline helper functions for script-internal Sub/Function definitions
+      if (script.functions.length > 0) {
+        const helpers = this.generateInlineHelpers(script);
+        if (helpers.length > 0) {
+          testFile.helperFunctions = helpers;
+          // Ensure Page import is available for helper functions
+          if (!testFile.imports.some(i => i.includes('Page'))) {
+            testFile.imports.push("import { Page } from '@playwright/test'");
+          }
+        }
+      }
 
       // Generate output
       const outputContent = this.generator.generateTestFile(testFile);
@@ -380,6 +416,379 @@ export class ConverterEngine {
       writeFileContent(outputPath, content);
       logger.info(`Generated Page Object: ${po.fileName}`);
     }
+  }
+
+  /**
+   * Separate discovered script files into function libraries and test scripts.
+   * A file is considered a library if it contains mostly Function/Sub definitions
+   * and few or no direct Browser/Page actions outside of functions.
+   */
+  private separateLibraries(scriptFiles: string[]): { libraries: string[]; testScripts: string[] } {
+    const libraries: string[] = [];
+    const testScripts: string[] = [];
+
+    for (const file of scriptFiles) {
+      const script = this.parseScript(file);
+      if (!script) {
+        testScripts.push(file);
+        continue;
+      }
+
+      // A file is a library if it has functions AND the ratio of functions to
+      // top-level actions is high (functions contain the actions, not the top level)
+      const hasFunctions = script.functions.length > 0;
+      const hasTopLevelActions = script.actions.length > 0;
+      const baseName = path.basename(file).toLowerCase();
+
+      // Heuristics for library detection:
+      // 1. File name contains "lib", "library", "common", "function", "helper", "util"
+      const libraryNamePattern = /(?:lib|library|common|function|helper|util)/i;
+      const hasLibraryName = libraryNamePattern.test(baseName);
+
+      // 2. Has functions and few/no top-level actions (actions are inside functions)
+      const isMostlyFunctions = hasFunctions && script.functions.length >= 2 && script.actions.length <= 2;
+
+      if (hasLibraryName && hasFunctions) {
+        libraries.push(file);
+        logger.info(`  Library detected: ${path.basename(file)} (${script.functions.length} functions)`);
+      } else if (isMostlyFunctions && !hasTopLevelActions) {
+        libraries.push(file);
+        logger.info(`  Library detected: ${path.basename(file)} (${script.functions.length} functions, no top-level actions)`);
+      } else {
+        testScripts.push(file);
+      }
+    }
+
+    return { libraries, testScripts };
+  }
+
+  /**
+   * Convert a function library file to a TypeScript helper module.
+   * Generates a module in tests/helpers/ with exported async functions.
+   */
+  private convertLibraryFile(libFile: string): void {
+    const script = this.parseScript(libFile);
+    if (!script || script.functions.length === 0) {
+      logger.warn(`Library file has no functions: ${path.basename(libFile)}`);
+      return;
+    }
+
+    const baseName = path.basename(libFile).replace(/\.(vbs|qfl|mts|txt)$/i, '');
+    const moduleName = baseName
+      .replace(/[^a-zA-Z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .toLowerCase();
+
+    const functionNames: string[] = [];
+    const lines: string[] = [];
+
+    // Header
+    lines.push('/**');
+    lines.push(` * Helper module: ${baseName}`);
+    lines.push(` * Converted from UFT function library: ${path.basename(libFile)}`);
+    lines.push(' * Auto-generated by UFT-to-Playwright Converter');
+    lines.push(' */');
+    lines.push('');
+    lines.push("import { Page, expect } from '@playwright/test';");
+    lines.push('');
+
+    // Convert each function
+    for (const func of script.functions) {
+      const funcName = func.name.charAt(0).toLowerCase() + func.name.slice(1);
+      functionNames.push(funcName);
+
+      // Build parameter list - always include 'page' as first param
+      const params = ['page: Page'];
+      for (const p of func.parameters) {
+        const cleanParam = p.replace(/^ByVal\s+|^ByRef\s+/i, '').trim();
+        params.push(`${cleanParam}: string`);
+      }
+
+      // All library functions use Promise<void> for clean compilation;
+    // return values need manual review anyway
+    const returnType = 'Promise<void>';
+
+      lines.push(`export async function ${funcName}(${params.join(', ')}): ${returnType} {`);
+
+      // Convert function body
+      const bodyLines = this.convertFunctionBody(func.body);
+      for (const bodyLine of bodyLines) {
+        lines.push(`  ${bodyLine}`);
+      }
+
+      lines.push('}');
+      lines.push('');
+    }
+
+    // Write the helper module
+    const outputPath = path.join(this.config.outputDir, 'tests', 'helpers', `${moduleName}.ts`);
+    writeFileContent(outputPath, lines.join('\n'));
+    logger.info(`  Generated helper module: helpers/${moduleName}.ts (${functionNames.length} functions)`);
+
+    // Register the library for import resolution
+    const fileBaseName = path.basename(libFile);
+    this.libraryModules.set(fileBaseName, moduleName);
+    this.libraryFunctions.set(fileBaseName, functionNames);
+
+    // Also register without extension for flexible matching
+    const nameNoExt = fileBaseName.replace(/\.(vbs|qfl|mts|txt)$/i, '');
+    this.libraryModules.set(nameNoExt, moduleName);
+    this.libraryFunctions.set(nameNoExt, functionNames);
+  }
+
+  /**
+   * Convert VBScript function body to TypeScript lines.
+   */
+  private convertFunctionBody(body: string): string[] {
+    const lines = body.split('\n');
+    const tsLines: string[] = [];
+    const mapper = new ActionMapper();
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      // Skip comments — add as TS comments
+      if (trimmed.startsWith("'")) {
+        tsLines.push(`// ${trimmed.substring(1).trim()}`);
+        continue;
+      }
+
+      // Dim declarations - initialize with empty string to avoid TS2454
+      if (/^\s*Dim\s+/i.test(trimmed)) {
+        const vars = trimmed.replace(/^\s*Dim\s+/i, '').split(',').map(v => v.trim());
+        for (const v of vars) {
+          tsLines.push(`let ${v} = '';`);
+        }
+        continue;
+      }
+
+      // If...Then with UFT object condition (e.g., If Browser("X").Page("Y").Exist(10) Then)
+      const ifObjMatch = trimmed.match(/^If\s+(Browser\(.+\))\s+Then\s*$/i);
+      if (ifObjMatch) {
+        const condAction = this.parser.parseAction(ifObjMatch[1], 0);
+        if (condAction) {
+          const pwAction = mapper.map(condAction);
+          // If the mapped code is a TODO/comment, put it above the if and use a placeholder
+          if (pwAction.code.includes('TODO') || pwAction.code.startsWith('//')) {
+            tsLines.push(`${pwAction.code}`);
+            tsLines.push(`if (true /* TODO: replace with proper condition */) {`);
+          } else {
+            tsLines.push(`if (await ${pwAction.code}) {`);
+          }
+        } else {
+          tsLines.push(`// TODO: ${ifObjMatch[1]}`);
+          tsLines.push(`if (true /* TODO: replace with proper condition */) {`);
+        }
+        continue;
+      }
+
+      // If...Then (generic)
+      if (/^If\s+(.+)\s+Then\s*$/i.test(trimmed)) {
+        let cond = trimmed.replace(/^If\s+/i, '').replace(/\s+Then\s*$/i, '');
+        cond = cond.replace(/\bAnd\b/gi, '&&').replace(/\bOr\b/gi, '||');
+        cond = cond.replace(/\bNot\b/gi, '!').replace(/\b<>\b/g, '!==');
+        cond = cond.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
+        // Fix single = to === for comparisons (but not assignments)
+        cond = cond.replace(/([^=!<>])=([^=])/g, '$1===$2');
+        tsLines.push(`if (${cond}) {`);
+        continue;
+      }
+
+      // ElseIf
+      if (/^ElseIf\s+(.+)\s+Then\s*$/i.test(trimmed)) {
+        let cond = trimmed.replace(/^ElseIf\s+/i, '').replace(/\s+Then\s*$/i, '');
+        cond = cond.replace(/\bAnd\b/gi, '&&').replace(/\bOr\b/gi, '||');
+        tsLines.push(`} else if (${cond}) {`);
+        continue;
+      }
+
+      // Else / End If
+      if (/^Else\s*$/i.test(trimmed)) { tsLines.push('} else {'); continue; }
+      if (/^End If\s*$/i.test(trimmed)) { tsLines.push('}'); continue; }
+
+      // For...Next
+      if (/^For\s+/i.test(trimmed)) {
+        const forLine = trimmed.replace(
+          /^For\s+(\w+)\s*=\s*(\w+)\s+To\s+(\w+)/i,
+          'for (let $1 = $2; $1 <= $3; $1++) {'
+        );
+        tsLines.push(forLine);
+        continue;
+      }
+      if (/^Next\s*$/i.test(trimmed)) { tsLines.push('}'); continue; }
+
+      // Wait N
+      if (/^\s*Wait\s+\d+/i.test(trimmed)) {
+        const waitMatch = trimmed.match(/Wait\s+(\d+)/i);
+        if (waitMatch) {
+          tsLines.push(`await page.waitForTimeout(${waitMatch[1]} * 1000);`);
+        }
+        continue;
+      }
+
+      // Reporter.ReportEvent
+      if (/^Reporter\.ReportEvent/i.test(trimmed)) {
+        const repMatch = trimmed.match(
+          /Reporter\.ReportEvent\s+(mic\w+)\s*,\s*"([^"]*)"\s*,\s*(.+)/i
+        );
+        if (repMatch) {
+          const msgParts = repMatch[3].replace(/"/g, "'").replace(/\s*&\s*/g, ' + ');
+          tsLines.push(`console.log('[${repMatch[1]}] ${repMatch[2]}: ' + ${msgParts});`);
+        } else {
+          tsLines.push(`// ${trimmed}`);
+        }
+        continue;
+      }
+
+      // Try to parse as a UFT action (Browser().Page().WebEdit().Set etc.)
+      const action = this.parser.parseAction(trimmed, 0);
+      if (action) {
+        const pwAction = mapper.map(action);
+        const code = pwAction.code.endsWith(';') ? pwAction.code : pwAction.code + ';';
+        tsLines.push(code);
+        continue;
+      }
+
+      // Assignment with UFT object on right side (e.g., varName = Browser(...).GetROProperty(...))
+      const assignObjMatch = trimmed.match(/^(\w+)\s*=\s*(Browser\(.+)/i);
+      if (assignObjMatch) {
+        const rhsAction = this.parser.parseAction(assignObjMatch[2], 0);
+        if (rhsAction) {
+          const pwAction = mapper.map(rhsAction);
+          if (pwAction.code.includes('TODO') || pwAction.code.startsWith('//')) {
+            tsLines.push(`${pwAction.code}`);
+            tsLines.push(`const ${assignObjMatch[1]} = '' as string; // TODO: assign from above`);
+          } else {
+            tsLines.push(`const ${assignObjMatch[1]} = await ${pwAction.code};`);
+          }
+        } else {
+          tsLines.push(`// TODO: ${assignObjMatch[2]}`);
+          tsLines.push(`const ${assignObjMatch[1]} = '' as string; // TODO: assign from above`);
+        }
+        continue;
+      }
+
+      // Generic assignment
+      const assignMatch = trimmed.match(/^(\w+)\s*=\s*(.+)$/);
+      if (assignMatch && !/^(If|ElseIf|For|While|Do|Select)\b/i.test(trimmed)) {
+        let value = assignMatch[2].trim();
+        value = value.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
+        value = value.replace(/\bNothing\b/gi, 'null');
+        value = value.replace(/\s+&\s+/g, ' + ');
+        // Convert VBS string quotes to TS
+        value = value.replace(/"([^"]*)"/g, "'$1'");
+        tsLines.push(`const ${assignMatch[1]} = ${value};`);
+        continue;
+      }
+
+      // Fallback — pass through with VBS operator conversion
+      let tsLine = trimmed;
+      tsLine = tsLine.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
+      tsLine = tsLine.replace(/\bAnd\b/gi, '&&').replace(/\bOr\b/gi, '||');
+      tsLine = tsLine.replace(/\bNot\b/gi, '!').replace(/\b<>\b/g, '!==');
+      tsLine = tsLine.replace(/\s+&\s+/g, ' + ');
+      tsLines.push(`// TODO: ${tsLine}`);
+    }
+
+    return tsLines;
+  }
+
+  /**
+   * Generate inline helper functions for script-internal Sub/Function definitions.
+   * These are functions defined within the script itself (not from external libraries).
+   */
+  private generateInlineHelpers(script: UFTScript): string[] {
+    const helpers: string[] = [];
+
+    for (const func of script.functions) {
+      const funcName = func.name.charAt(0).toLowerCase() + func.name.slice(1);
+
+      // Build parameter list - always include 'page' as first param
+      const params = ['page: Page'];
+      for (const p of func.parameters) {
+        const cleanParam = p.replace(/^ByVal\s+|^ByRef\s+/i, '').trim();
+        params.push(`${cleanParam}: string`);
+      }
+
+      const lines: string[] = [];
+      lines.push(`async function ${funcName}(${params.join(', ')}): Promise<void> {`);
+
+      // Convert function body
+      const bodyLines = this.convertFunctionBody(func.body);
+      for (const bodyLine of bodyLines) {
+        lines.push(`  ${bodyLine}`);
+      }
+
+      lines.push('}');
+      helpers.push(lines.join('\n'));
+    }
+
+    return helpers;
+  }
+
+  /**
+   * Resolve library imports for a script based on ExecuteFile/LoadFunctionLibrary
+   * references and FunctionCall actions that match known library functions.
+   */
+  private resolveLibraryImports(script: UFTScript): string[] {
+    const imports: string[] = [];
+    const importedModules = new Set<string>();
+
+    // Build set of internal function names (defined in this script itself)
+    const internalFunctions = new Set<string>();
+    for (const func of script.functions) {
+      internalFunctions.add(func.name.toLowerCase());
+    }
+
+    // Find ExecuteFile/LoadFunctionLibrary actions to determine which libraries are referenced
+    for (const action of script.actions) {
+      if (action.objectType === 'Utility' &&
+          (action.method === 'ExecuteFile' || action.method === 'LoadFunctionLibrary') &&
+          action.arguments.length > 0) {
+        const libRef = action.arguments[0];
+        // Try to match by file name or base name
+        const libBaseName = path.basename(libRef);
+        const libNameNoExt = libBaseName.replace(/\.(vbs|qfl|mts|txt)$/i, '');
+
+        const moduleName = this.libraryModules.get(libBaseName) || this.libraryModules.get(libNameNoExt);
+        const funcNames = this.libraryFunctions.get(libBaseName) || this.libraryFunctions.get(libNameNoExt);
+
+        if (moduleName && funcNames && !importedModules.has(moduleName)) {
+          // Exclude functions that are defined internally in the script
+          const filteredFuncs = funcNames.filter(f => !internalFunctions.has(f.toLowerCase()));
+          if (filteredFuncs.length > 0) {
+            imports.push(`import { ${filteredFuncs.join(', ')} } from './helpers/${moduleName}'`);
+            importedModules.add(moduleName);
+          }
+        }
+      }
+    }
+
+    // Also check FunctionCall actions — if any match a known library function,
+    // auto-add the import even without explicit ExecuteFile
+    for (const action of script.actions) {
+      if (action.objectType === 'FunctionCall') {
+        // Skip if this function is defined internally in the script
+        if (internalFunctions.has(action.method.toLowerCase())) {
+          continue;
+        }
+        const calledFunc = action.method.charAt(0).toLowerCase() + action.method.slice(1);
+        for (const [libKey, funcNames] of this.libraryFunctions) {
+          const moduleName = this.libraryModules.get(libKey);
+          if (moduleName && funcNames.includes(calledFunc) && !importedModules.has(moduleName)) {
+            const filteredFuncs = funcNames.filter(f => !internalFunctions.has(f.toLowerCase()));
+            if (filteredFuncs.length > 0) {
+              imports.push(`import { ${filteredFuncs.join(', ')} } from './helpers/${moduleName}'`);
+              importedModules.add(moduleName);
+            }
+            break;
+          }
+        }
+      }
+    }
+
+    return imports;
   }
 
   /**

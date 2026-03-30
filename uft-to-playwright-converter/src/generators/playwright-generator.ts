@@ -37,6 +37,11 @@ export class PlaywrightGenerator {
       sections.push(this.generatePageObjectImports(testFile));
     }
 
+    // Inline helper functions (from script-internal Sub/Function definitions)
+    if (testFile.helperFunctions && testFile.helperFunctions.length > 0) {
+      sections.push(testFile.helperFunctions.join('\n\n'));
+    }
+
     // Test describe block
     sections.push(this.generateTestDescribe(testFile));
 
