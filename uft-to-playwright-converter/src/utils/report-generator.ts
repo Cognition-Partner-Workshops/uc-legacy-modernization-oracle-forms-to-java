@@ -266,6 +266,21 @@ export class ReportGenerator {
       }
       console.log('');
     }
+
+    // Print per-script errors
+    const totalErrors = summary.details.reduce((s, d) => s + d.errors.length, 0);
+    if (totalErrors > 0) {
+      console.log('  Errors:');
+      for (const detail of summary.details) {
+        if (detail.errors.length > 0) {
+          console.log(`\n  ${path.basename(detail.inputFile)} (${detail.errors.length} error${detail.errors.length > 1 ? 's' : ''}):`);
+          for (const error of detail.errors) {
+            console.log(`    ✖ ${error}`);
+          }
+        }
+      }
+      console.log('');
+    }
   }
 
   private static escapeHtml(str: string): string {

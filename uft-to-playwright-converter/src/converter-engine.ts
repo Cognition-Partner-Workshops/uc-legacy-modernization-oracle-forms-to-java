@@ -291,6 +291,13 @@ export class ConverterEngine {
         }
       }
 
+      // Print errors for this script
+      if (detail.errors.length > 0) {
+        for (const error of detail.errors) {
+          logger.error(`     ✖ ${error}`);
+        }
+      }
+
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
       detail.errors.push(errMsg);
