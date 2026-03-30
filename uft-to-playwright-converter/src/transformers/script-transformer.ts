@@ -263,9 +263,26 @@ export class ScriptTransformer {
 
   /**
    * Transform VBScript variables to TypeScript declarations.
+   * Deduplicates variables — only declares each variable once using the last assigned value.
    */
   transformVariables(variables: UFTVariable[]): string[] {
-    return variables.map(v => {
+    // Deduplicate: keep the last assignment for each variable name
+    const varMap = new Map<string, UFTVariable>();
+    for (const v of variables) {
+      const key = v.name.toLowerCase();
+      const existing = varMap.get(key);
+      // If variable already exists, update with the latest value (if it has one)
+      if (existing) {
+        if (v.initialValue) {
+          varMap.set(key, v);
+        }
+        // else keep the existing entry (Dim declaration or earlier assignment)
+      } else {
+        varMap.set(key, v);
+      }
+    }
+
+    return Array.from(varMap.values()).map(v => {
       const keyword = v.type === 'Const' ? 'const' : 'let';
       if (v.initialValue) {
         const tsValue = this.vbToTsValue(v.initialValue);
