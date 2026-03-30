@@ -310,7 +310,7 @@ export class PlaywrightGenerator {
       const comment = sel.originalUFTObject
         ? ` // UFT: ${sel.originalUFTObject}`
         : '';
-      lines.push(`  private readonly ${sel.name} = '${sel.selector}';${comment}`);
+      lines.push(`  private readonly ${sel.name} = '${sel.selector.replace(/'/g, "\\'")}';${comment}`);
     }
     lines.push('');
 
