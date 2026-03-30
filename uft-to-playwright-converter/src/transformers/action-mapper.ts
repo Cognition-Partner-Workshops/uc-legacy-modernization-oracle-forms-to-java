@@ -485,6 +485,21 @@ export class ActionMapper {
           needsSelector: true,
           confidence: 65,
         },
+        Exist: {
+          playwright: 'await page.locator({{SELECTOR}}).isVisible()',
+          isAsync: true,
+          imports: [],
+          needsSelector: true,
+          confidence: 85,
+        },
+        GetROProperty: {
+          playwright: "await page.locator({{SELECTOR}}).getAttribute('{{ARG0}}')",
+          isAsync: true,
+          imports: [],
+          needsSelector: true,
+          confidence: 75,
+          notes: 'WebTable GetROProperty - property name may need adjustment for Playwright.',
+        },
       },
 
       Link: {

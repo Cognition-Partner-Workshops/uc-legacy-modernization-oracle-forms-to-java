@@ -70,10 +70,16 @@ export class PageObjectGenerator {
 
     for (const [pageName, objects] of pageMap) {
       const selectors: PageSelector[] = [];
+      const seenPropertyNames = new Set<string>();
 
       for (const [objName, objType] of objects) {
+        const propertyName = this.toPropertyName(objName);
+        // Skip duplicates that normalize to the same property name
+        if (seenPropertyNames.has(propertyName)) continue;
+        seenPropertyNames.add(propertyName);
+
         selectors.push({
-          name: this.toPropertyName(objName),
+          name: propertyName,
           selector: this.inferSelector(objName, objType),
           selectorType: this.inferSelectorType(objName),
           originalUFTObject: `${objType}("${objName}")`,

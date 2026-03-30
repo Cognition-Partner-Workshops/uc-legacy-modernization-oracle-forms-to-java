@@ -18,6 +18,7 @@ export async function findUFTScripts(dir: string): Promise<string[]> {
     '**/*.mts',
     '**/Action*.txt',     // UFT action scripts stored as .txt
     '**/Script.txt',      // UFT default script name
+    '**/Script.mts',      // UFT action script stored as .mts
   ];
 
   const files: string[] = [];
