@@ -251,7 +251,21 @@ export class ReportGenerator {
     console.log(`  Total Warnings:    ${summary.totalWarnings}`);
     console.log(`  Avg Confidence:    ${summary.averageConfidence.toFixed(1)}%`);
     console.log(`  Duration:          ${(summary.durationMs / 1000).toFixed(1)}s`);
-    console.log('='.repeat(70) + '\n');
+    console.log('='.repeat(70));
+
+    // Print per-script warnings
+    if (summary.totalWarnings > 0) {
+      console.log('\n  Warnings:');
+      for (const detail of summary.details) {
+        if (detail.warnings.length > 0) {
+          console.log(`\n  ${path.basename(detail.inputFile)} (${detail.warnings.length} warning${detail.warnings.length > 1 ? 's' : ''}):`);
+          for (const warning of detail.warnings) {
+            console.log(`    - ${warning}`);
+          }
+        }
+      }
+      console.log('');
+    }
   }
 
   private static escapeHtml(str: string): string {

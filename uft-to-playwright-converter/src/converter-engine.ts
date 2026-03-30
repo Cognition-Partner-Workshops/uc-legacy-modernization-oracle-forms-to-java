@@ -284,6 +284,13 @@ export class ConverterEngine {
         `${detail.confidence}% confidence`
       );
 
+      // Print warnings for this script
+      if (detail.warnings.length > 0) {
+        for (const warning of detail.warnings) {
+          logger.warn(`     ⚠ ${warning}`);
+        }
+      }
+
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
       detail.errors.push(errMsg);
