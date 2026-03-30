@@ -399,8 +399,8 @@ export class ActionMapper {
     cond = cond.replace(/\\/g, '/');
     // Exponentiation ^ -> **
     cond = cond.replace(/\^/g, '**');
-    // Convert VBS string expressions
-    cond = cond.replace(/"([^"]*)"/g, "'$1'");
+    // Convert VBS string expressions (handle VBS "" escape sequences)
+    cond = cond.replace(/"((?:[^"]|"")*)"/g, (_, content) => `'${content.replace(/""/g, '"')}'`);
     return cond;
   }
 
