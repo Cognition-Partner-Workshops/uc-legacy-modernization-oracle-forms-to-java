@@ -140,7 +140,13 @@ export class ScriptTransformer {
 
       // Add original line as comment if configured
       if (this.config.preserveComments) {
-        pwAction.comments.push(`// UFT Line ${action.lineNumber}: ${action.rawLine}`);
+        // Convert VBS operators in the reference comment so <> doesn't appear in output
+        const commentLine = action.rawLine
+          .replace(/<>/g, '!==')
+          .replace(/\bAnd\b/gi, '&&')
+          .replace(/\bOr\b/gi, '||')
+          .replace(/\bNot\b/gi, '!');
+        pwAction.comments.push(`// UFT Line ${action.lineNumber}: ${commentLine}`);
       }
 
       if (isAssertion) {
