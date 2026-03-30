@@ -47,6 +47,11 @@ export class ActionMapper {
    * Map a UFT action to a Playwright action.
    */
   map(action: UFTAction, selector?: string): PlaywrightAction {
+    // Handle control flow actions (If/ElseIf/Else/End If/For/Next/While/etc.)
+    if (action.objectType === 'ControlFlow') {
+      return this.convertControlFlow(action);
+    }
+
     // Check custom overrides first
     const overrideKey = `${action.objectType}.${action.method}`;
     const override = this.customOverrides.get(overrideKey);
@@ -215,6 +220,319 @@ export class ActionMapper {
     micwarning: "'micWarning'",
     micinfo: "'micInfo'",
   };
+
+  /**
+   * Convert a VBScript control flow action to TypeScript.
+   * Handles If/ElseIf/Else/End If/For/Next/While/Wend/Do/Loop/Select/Case/Exit.
+   */
+  private convertControlFlow(action: UFTAction): PlaywrightAction {
+    const vbsLine = action.arguments.length > 0 ? action.arguments[0] : action.rawLine;
+    let code = '';
+
+    switch (action.method) {
+      case 'If': {
+        let cond = vbsLine.replace(/^\s*If\s+/i, '').replace(/\s+Then\s*$/i, '');
+        cond = this.convertVbsCondition(cond);
+        code = `if (${cond}) {`;
+        break;
+      }
+      case 'IfSingleLine': {
+        // If condition Then statement
+        const match = vbsLine.match(/^\s*If\s+(.+?)\s+Then\s+(.+)/i);
+        if (match) {
+          let cond = this.convertVbsCondition(match[1]);
+          let stmt = match[2].trim();
+          // Convert common statements
+          stmt = this.convertVbsStatement(stmt);
+          code = `if (${cond}) { ${stmt} }`;
+        } else {
+          code = `// TODO: ${vbsLine}`;
+        }
+        break;
+      }
+      case 'ElseIf': {
+        let cond = vbsLine.replace(/^\s*ElseIf\s+/i, '').replace(/\s+Then\s*$/i, '');
+        cond = this.convertVbsCondition(cond);
+        code = `} else if (${cond}) {`;
+        break;
+      }
+      case 'Else':
+        code = '} else {';
+        break;
+      case 'EndIf':
+        code = '}';
+        break;
+      case 'For': {
+        const forLine = vbsLine.replace(
+          /^\s*For\s+(\w+)\s*=\s*(.+?)\s+To\s+(\S+)(?:\s+Step\s+(\S+))?\s*$/i,
+          (_, varName, start, end, step) => {
+            const s = step ? step : '1';
+            const op = (s.startsWith('-')) ? '>=' : '<=';
+            const inc = (s === '1') ? `${varName}++` : `${varName} += ${s}`;
+            return `for (let ${varName} = ${start}; ${varName} ${op} ${end}; ${inc}) {`;
+          }
+        );
+        code = forLine;
+        break;
+      }
+      case 'ForEach': {
+        const feMatch = vbsLine.match(/^\s*For\s+Each\s+(\w+)\s+In\s+(.+)/i);
+        if (feMatch) {
+          code = `for (const ${feMatch[1]} of ${feMatch[2].trim()}) {`;
+        } else {
+          code = `// TODO: ${vbsLine}`;
+        }
+        break;
+      }
+      case 'Next':
+        code = '}';
+        break;
+      case 'While': {
+        let cond = vbsLine.replace(/^\s*While\s+/i, '').trim();
+        cond = this.convertVbsCondition(cond);
+        code = `while (${cond}) {`;
+        break;
+      }
+      case 'Wend':
+        code = '}';
+        break;
+      case 'Do': {
+        const doMatch = vbsLine.match(/^\s*Do\s+(While|Until)\s+(.+)/i);
+        if (doMatch) {
+          let cond = this.convertVbsCondition(doMatch[2].trim());
+          if (doMatch[1].toLowerCase() === 'until') {
+            cond = `!(${cond})`;
+          }
+          code = `while (${cond}) {`;
+        } else {
+          // Bare "Do" — becomes do { ... } while
+          code = 'do {';
+        }
+        break;
+      }
+      case 'Loop': {
+        const loopMatch = vbsLine.match(/^\s*Loop\s+(While|Until)\s+(.+)/i);
+        if (loopMatch) {
+          let cond = this.convertVbsCondition(loopMatch[2].trim());
+          if (loopMatch[1].toLowerCase() === 'until') {
+            cond = `!(${cond})`;
+          }
+          code = `} while (${cond});`;
+        } else {
+          code = '}';
+        }
+        break;
+      }
+      case 'SelectCase': {
+        const scMatch = vbsLine.match(/^\s*Select\s+Case\s+(.+)/i);
+        code = scMatch ? `switch (${scMatch[1].trim()}) {` : `// TODO: ${vbsLine}`;
+        break;
+      }
+      case 'Case': {
+        const caseStr = vbsLine.replace(/^\s*Case\s+/i, '').trim();
+        if (/^Else$/i.test(caseStr)) {
+          code = 'default:';
+        } else if (caseStr.startsWith('"')) {
+          const inner = caseStr.slice(1, -1).replace(/'/g, "\\'");
+          code = `case '${inner}':`;
+        } else {
+          code = `case ${caseStr}:`;
+        }
+        break;
+      }
+      case 'EndSelect':
+        code = '}';
+        break;
+      case 'Exit': {
+        const exitMatch = vbsLine.match(/^\s*Exit\s+(For|Do|Function|Sub)\s*$/i);
+        if (exitMatch) {
+          const kind = exitMatch[1].toLowerCase();
+          code = (kind === 'for' || kind === 'do') ? 'break;' : 'return;';
+        } else {
+          code = 'break;';
+        }
+        break;
+      }
+      default:
+        code = `// TODO: ${vbsLine}`;
+    }
+
+    return {
+      code,
+      imports: [],
+      comments: [],
+      isAsync: false,
+      confidence: 90,
+      originalUFTLine: action.rawLine,
+      warnings: [],
+    };
+  }
+
+  /**
+   * Convert a VBScript condition expression to TypeScript.
+   * Converts all VBScript operators to their TypeScript equivalents.
+   */
+  private convertVbsCondition(cond: string): string {
+    // Check if the entire condition (or a part) is a UFT object chain like Browser(...).Page(...).WebElement(...).Exist(10)
+    const uftPattern = /Browser\s*\([^)]*\)(?:\.\w+\s*\([^)]*\))+/g;
+    cond = cond.replace(uftPattern, (match) => {
+      // Convert UFT object chain to Playwright equivalent
+      return this.convertUftObjectChainInCondition(match);
+    });
+
+    // Convert VBScript InStr function calls (handles nested parens like DataTable(...))
+    cond = ActionMapper.convertInStr(cond);
+
+    cond = cond.replace(/\bAnd\b/gi, '&&');
+    cond = cond.replace(/\bOr\b/gi, '||');
+    cond = cond.replace(/\bNot\b/gi, '!');
+    cond = cond.replace(/<>/g, '!==');
+    cond = cond.replace(/\bMod\b/gi, '%');
+    cond = cond.replace(/\bIs\b/gi, '===');
+    cond = cond.replace(/\bTrue\b/gi, 'true');
+    cond = cond.replace(/\bFalse\b/gi, 'false');
+    cond = cond.replace(/\bNothing\b/gi, 'null');
+    cond = cond.replace(/\bEmpty\b/gi, "''");
+    // Fix single = to === for comparisons (but not assignments or ===/!==)
+    cond = cond.replace(/([^=!<>])=([^=])/g, '$1===$2');
+    // Integer division \ -> /
+    cond = cond.replace(/\\/g, '/');
+    // Exponentiation ^ -> **
+    cond = cond.replace(/\^/g, '**');
+    // Convert VBS string expressions
+    cond = cond.replace(/"([^"]*)"/g, "'$1'");
+    return cond;
+  }
+
+  /**
+   * Convert a UFT object chain (e.g., Browser("X").Page("Y").WebElement("Z").Exist(10))
+   * into a Playwright equivalent for use inside conditions.
+   */
+  private convertUftObjectChainInCondition(chain: string): string {
+    // Extract method call at the end (e.g., .Exist(10), .GetROProperty("innertext"))
+    const methodMatch = chain.match(/\.(\w+)\s*\(([^)]*)\)\s*$/);
+    if (!methodMatch) return `/* TODO: ${chain} */`;
+
+    const method = methodMatch[1];
+    const methodArg = methodMatch[2].trim();
+
+    // Extract object name from the chain (last object before the method)
+    // e.g., Browser("X").Page("Y").WebElement("Z") → find "Z" and type "WebElement"
+    const objectParts = chain.substring(0, chain.length - methodMatch[0].length);
+    const lastObjMatch = objectParts.match(/\.(\w+)\s*\(\s*"([^"]*)"\s*\)\s*$/);
+    const objectName = lastObjMatch ? lastObjMatch[2] : 'unknown';
+    const objectType = lastObjMatch ? lastObjMatch[1] : 'WebElement';
+
+    // Build a selector
+    const selector = `'#${objectName}'`;
+
+    switch (method.toLowerCase()) {
+      case 'exist':
+        return `await page.locator(${selector}).count() > 0`;
+      case 'getroproperty': {
+        const prop = methodArg.replace(/"/g, '').replace(/'/g, '');
+        if (prop === 'innertext' || prop === 'text') {
+          return `await page.locator(${selector}).innerText()`;
+        }
+        if (prop === 'value') {
+          return `await page.locator(${selector}).inputValue()`;
+        }
+        return `await page.locator(${selector}).getAttribute('${prop}')`;
+      }
+      case 'checkproperty':
+      case 'verifyproperty':
+        return `await page.locator(${selector}).getAttribute(${methodArg})`;
+      default:
+        return `/* TODO: ${chain} */`;
+    }
+  }
+
+  /**
+   * Convert a simple VBScript statement to TypeScript (for single-line If).
+   */
+  /**
+   * Convert VBScript InStr() calls to TypeScript equivalents.
+   * Handles nested function calls like InStr(x, DataTable("Y", z)) > 0.
+   */
+  static convertInStr(expr: string): string {
+    // Find InStr( with proper nesting
+    const instrRegex = /\bInStr\s*\(/gi;
+    let match;
+    let result = expr;
+    let offset = 0;
+
+    while ((match = instrRegex.exec(expr)) !== null) {
+      const funcStart = match.index;
+      const argsStart = funcStart + match[0].length;
+
+      // Find matching closing paren
+      let depth = 1;
+      let i = argsStart;
+      while (i < expr.length && depth > 0) {
+        if (expr[i] === '(') depth++;
+        else if (expr[i] === ')') depth--;
+        i++;
+      }
+      const argsEnd = i - 1; // index of closing paren
+      const argsStr = expr.substring(argsStart, argsEnd);
+
+      // Split args at top-level comma (not inside nested parens)
+      const args: string[] = [];
+      let argDepth = 0;
+      let argStart = 0;
+      for (let j = 0; j < argsStr.length; j++) {
+        if (argsStr[j] === '(') argDepth++;
+        else if (argsStr[j] === ')') argDepth--;
+        else if (argsStr[j] === ',' && argDepth === 0) {
+          args.push(argsStr.substring(argStart, j).trim());
+          argStart = j + 1;
+        }
+      }
+      args.push(argsStr.substring(argStart).trim());
+
+      if (args.length >= 2) {
+        const strArg = args[0];
+        let searchArg = args[1];
+        // Convert VBS strings to TS
+        searchArg = searchArg.replace(/^"(.*)"$/, "'$1'");
+
+        // Check if followed by > 0
+        const afterInStr = expr.substring(argsEnd + 1).trim();
+        const gtZeroMatch = afterInStr.match(/^\s*>\s*0/);
+
+        let replacement: string;
+        if (gtZeroMatch) {
+          replacement = `${strArg}.includes(${searchArg})`;
+          const fullEnd = argsEnd + 1 + expr.substring(argsEnd + 1).indexOf('0') + 1;
+          const original = expr.substring(funcStart, fullEnd);
+          result = result.substring(0, funcStart + offset) + replacement + result.substring(funcStart + offset + original.length);
+          offset += replacement.length - original.length;
+        } else {
+          replacement = `${strArg}.indexOf(${searchArg})`;
+          const original = expr.substring(funcStart, argsEnd + 1);
+          result = result.substring(0, funcStart + offset) + replacement + result.substring(funcStart + offset + original.length);
+          offset += replacement.length - original.length;
+        }
+      }
+    }
+    return result;
+  }
+
+  private convertVbsStatement(stmt: string): string {
+    // Assignment: varName = value
+    const assignMatch = stmt.match(/^(\w+)\s*=\s*(.+)/);
+    if (assignMatch) {
+      let value = assignMatch[2].trim();
+      value = value.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
+      value = value.replace(/\bNothing\b/gi, 'null');
+      value = value.replace(/"([^"]*)"/g, "'$1'");
+      return `${assignMatch[1]} = ${value};`;
+    }
+    // Exit For/Do/Function/Sub
+    if (/^Exit\s+(For|Do)\s*$/i.test(stmt)) return 'break;';
+    if (/^Exit\s+(Function|Sub)\s*$/i.test(stmt)) return 'return;';
+    return `// TODO: ${stmt}`;
+  }
 
   private cleanArgument(arg: string): string {
     if (!arg) return "''";

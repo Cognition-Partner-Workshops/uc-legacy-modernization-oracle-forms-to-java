@@ -599,6 +599,8 @@ export class ConverterEngine {
         cond = cond.replace(/\bNot\b/gi, '!').replace(/<>/g, '!==');
         cond = cond.replace(/\bMod\b/gi, '%').replace(/\bIs\b/gi, '===');
         cond = cond.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
+        cond = cond.replace(/\bNothing\b/gi, 'null').replace(/\bEmpty\b/gi, "''");
+        cond = ActionMapper.convertInStr(cond);
         // Fix single = to === for comparisons (but not assignments)
         cond = cond.replace(/([^=!<>])=([^=])/g, '$1===$2');
         // Integer division \ -> Math.floor division
@@ -616,6 +618,8 @@ export class ConverterEngine {
         cond = cond.replace(/\bNot\b/gi, '!').replace(/<>/g, '!==');
         cond = cond.replace(/\bMod\b/gi, '%').replace(/\bIs\b/gi, '===');
         cond = cond.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
+        cond = cond.replace(/\bNothing\b/gi, 'null').replace(/\bEmpty\b/gi, "''");
+        cond = ActionMapper.convertInStr(cond);
         cond = cond.replace(/([^=!<>])=([^=])/g, '$1===$2');
         cond = cond.replace(/\\/g, '/');
         cond = cond.replace(/\^/g, '**');
@@ -734,6 +738,8 @@ export class ConverterEngine {
       tsLine = tsLine.replace(/\bNot\b/gi, '!').replace(/<>/g, '!==');
       tsLine = tsLine.replace(/\bMod\b/gi, '%').replace(/\bIs\b/gi, '===');
       tsLine = tsLine.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
+      tsLine = tsLine.replace(/\bNothing\b/gi, 'null').replace(/\bEmpty\b/gi, "''");
+      tsLine = ActionMapper.convertInStr(tsLine);
       tsLine = tsLine.replace(/([^=!<>])=([^=])/g, '$1===$2');
       tsLine = tsLine.replace(/\\/g, '/');
       tsLine = tsLine.replace(/\^/g, '**');

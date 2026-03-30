@@ -88,6 +88,13 @@ export class VBScriptParser {
         continue;
       }
 
+      // Control flow statements (If/ElseIf/Else/End If/For/Next/While/Wend/Do/Loop/Select/Case/Exit)
+      const controlFlowAction = this.parseControlFlow(fullLine, lineNum);
+      if (controlFlowAction) {
+        script.actions.push(controlFlowAction);
+        continue;
+      }
+
       // DataTable references
       const dataTableRefs = this.parseDataTableReferences(fullLine, lineNum);
       script.dataTables.push(...dataTableRefs);
@@ -560,6 +567,84 @@ export class VBScriptParser {
    * e.g., `itest = icount-1  'script start` → `itest = icount-1`
    * but   `msg = "it's fine"` should NOT strip anything.
    */
+  /**
+   * Parse control flow statements (If/ElseIf/Else/End If/For/Next/While/Wend/Do/Loop/Select/Case/Exit).
+   * Returns a UFTAction with objectType 'ControlFlow' so they are preserved in generated output.
+   */
+  private parseControlFlow(line: string, lineNumber: number): UFTAction | null {
+    // If...Then (single-line or block)
+    if (/^\s*If\s+.+\s+Then\s*$/i.test(line)) {
+      return { lineNumber, objectType: 'ControlFlow', objectName: 'If', method: 'If', arguments: [line], rawLine: line };
+    }
+    // Single-line If: If condition Then statement
+    if (/^\s*If\s+.+\s+Then\s+.+/i.test(line) && !/^\s*If\s+.+\s+Then\s*$/i.test(line)) {
+      return { lineNumber, objectType: 'ControlFlow', objectName: 'IfSingleLine', method: 'IfSingleLine', arguments: [line], rawLine: line };
+    }
+    // ElseIf
+    if (/^\s*ElseIf\s+.+\s+Then\s*$/i.test(line)) {
+      return { lineNumber, objectType: 'ControlFlow', objectName: 'ElseIf', method: 'ElseIf', arguments: [line], rawLine: line };
+    }
+    // Else
+    if (/^\s*Else\s*$/i.test(line)) {
+      return { lineNumber, objectType: 'ControlFlow', objectName: 'Else', method: 'Else', arguments: [], rawLine: line };
+    }
+    // End If
+    if (/^\s*End\s+If\s*$/i.test(line)) {
+      return { lineNumber, objectType: 'ControlFlow', objectName: 'EndIf', method: 'EndIf', arguments: [], rawLine: line };
+    }
+    // For...To
+    if (/^\s*For\s+\w+\s*=\s*.+\s+To\s+/i.test(line)) {
+      return { lineNumber, objectType: 'ControlFlow', objectName: 'For', method: 'For', arguments: [line], rawLine: line };
+    }
+    // For Each
+    if (/^\s*For\s+Each\s+/i.test(line)) {
+      return { lineNumber, objectType: 'ControlFlow', objectName: 'ForEach', method: 'ForEach', arguments: [line], rawLine: line };
+    }
+    // Next
+    if (/^\s*Next\s*$/i.test(line)) {
+      return { lineNumber, objectType: 'ControlFlow', objectName: 'Next', method: 'Next', arguments: [], rawLine: line };
+    }
+    // While
+    if (/^\s*While\s+/i.test(line)) {
+      return { lineNumber, objectType: 'ControlFlow', objectName: 'While', method: 'While', arguments: [line], rawLine: line };
+    }
+    // Wend
+    if (/^\s*Wend\s*$/i.test(line)) {
+      return { lineNumber, objectType: 'ControlFlow', objectName: 'Wend', method: 'Wend', arguments: [], rawLine: line };
+    }
+    // Do While / Do Until / Do (bare)
+    if (/^\s*Do\s+(While|Until)\s+/i.test(line)) {
+      return { lineNumber, objectType: 'ControlFlow', objectName: 'Do', method: 'Do', arguments: [line], rawLine: line };
+    }
+    if (/^\s*Do\s*$/i.test(line)) {
+      return { lineNumber, objectType: 'ControlFlow', objectName: 'Do', method: 'Do', arguments: [line], rawLine: line };
+    }
+    // Loop While / Loop Until / Loop (bare)
+    if (/^\s*Loop\s+(While|Until)\s+/i.test(line)) {
+      return { lineNumber, objectType: 'ControlFlow', objectName: 'Loop', method: 'Loop', arguments: [line], rawLine: line };
+    }
+    if (/^\s*Loop\s*$/i.test(line)) {
+      return { lineNumber, objectType: 'ControlFlow', objectName: 'Loop', method: 'Loop', arguments: [], rawLine: line };
+    }
+    // Select Case
+    if (/^\s*Select\s+Case\s+/i.test(line)) {
+      return { lineNumber, objectType: 'ControlFlow', objectName: 'SelectCase', method: 'SelectCase', arguments: [line], rawLine: line };
+    }
+    // Case (but not "Select Case")
+    if (/^\s*Case\s+/i.test(line) && !/^\s*Select\s+Case/i.test(line)) {
+      return { lineNumber, objectType: 'ControlFlow', objectName: 'Case', method: 'Case', arguments: [line], rawLine: line };
+    }
+    // End Select
+    if (/^\s*End\s+Select\s*$/i.test(line)) {
+      return { lineNumber, objectType: 'ControlFlow', objectName: 'EndSelect', method: 'EndSelect', arguments: [], rawLine: line };
+    }
+    // Exit For / Exit Do / Exit Function / Exit Sub
+    if (/^\s*Exit\s+(For|Do|Function|Sub)\s*$/i.test(line)) {
+      return { lineNumber, objectType: 'ControlFlow', objectName: 'Exit', method: 'Exit', arguments: [line], rawLine: line };
+    }
+    return null;
+  }
+
   private stripInlineComment(line: string): string {
     let inString = false;
     for (let i = 0; i < line.length; i++) {

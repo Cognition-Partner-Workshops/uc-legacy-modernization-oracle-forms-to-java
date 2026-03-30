@@ -495,6 +495,7 @@ export class ScriptTransformer {
       tsLine = tsLine.replace(/\bMod\b/gi, '%');
       tsLine = tsLine.replace(/\bIs\b/gi, '===');
       tsLine = tsLine.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
+      tsLine = tsLine.replace(/\bNothing\b/gi, 'null').replace(/\bEmpty\b/gi, "''");
       tsLine = tsLine.replace(/([^=!<>])=([^=])/g, '$1===$2');
       tsLine = tsLine.replace(/\\/g, '/');
       tsLine = tsLine.replace(/\^/g, '**');
