@@ -328,12 +328,32 @@ export class VBScriptParser {
   private parseObjectChain(line: string): string[] | null {
     const parts: string[] = [];
 
+    // Known UFT methods that take parenthesized arguments and should NOT
+    // be treated as object segments in the chain.
+    const methodNames = new Set([
+      'GetROProperty', 'CheckProperty', 'WaitProperty',
+      'GetCellData', 'GetCellProperty', 'ChildItem',
+      'Exist', 'GetItemsCount', 'GetRowCount',
+      'SetSecure', 'FireEvent',
+    ]);
+
     // Match each ObjectType("Name") segment
     const segmentPattern = /(\w+)\s*\(\s*"([^"]*)"\s*\)/g;
     let match;
     let lastIndex = 0;
 
     while ((match = segmentPattern.exec(line)) !== null) {
+      // If this segment name is a known method, treat it as a method call
+      // on the previous object rather than a new object segment
+      if (methodNames.has(match[1])) {
+        // Append as ".MethodName(...)" to the last part
+        if (parts.length > 0) {
+          const methodAndRest = line.substring(match.index - 1); // include the dot
+          parts[parts.length - 1] += methodAndRest.substring(0, match[0].length + 1);
+          lastIndex = match.index + match[0].length;
+        }
+        break; // Method calls are always at the end of the chain
+      }
       parts.push(match[0]);
       lastIndex = match.index + match[0].length;
     }
