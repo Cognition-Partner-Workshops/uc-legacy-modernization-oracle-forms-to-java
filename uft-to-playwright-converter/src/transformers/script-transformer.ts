@@ -491,8 +491,13 @@ export class ScriptTransformer {
       tsLine = tsLine.replace(/\bAnd\b/gi, '&&');
       tsLine = tsLine.replace(/\bOr\b/gi, '||');
       tsLine = tsLine.replace(/\bNot\b/gi, '!');
-      tsLine = tsLine.replace(/\b<>\b/g, '!==');
+      tsLine = tsLine.replace(/<>/g, '!==');
       tsLine = tsLine.replace(/\bMod\b/gi, '%');
+      tsLine = tsLine.replace(/\bIs\b/gi, '===');
+      tsLine = tsLine.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
+      tsLine = tsLine.replace(/([^=!<>])=([^=])/g, '$1===$2');
+      tsLine = tsLine.replace(/\\/g, '/');
+      tsLine = tsLine.replace(/\^/g, '**');
 
       // Convert VBS string expressions (handle & concatenation and strings with single quotes)
       tsLine = ScriptTransformer.convertVbsStringExpr(tsLine);
@@ -532,7 +537,10 @@ export class ScriptTransformer {
       expr = expr.replace(/\bOr\b/gi, '||');
       expr = expr.replace(/\bNot\b/gi, '!');
       expr = expr.replace(/\bMod\b/gi, '%');
-      expr = expr.replace(/\b<>\b/g, '!==');
+      expr = expr.replace(/<>/g, '!==');
+      expr = expr.replace(/\bIs\b/gi, '===');
+      expr = expr.replace(/\\/g, '/');
+      expr = expr.replace(/\^/g, '**');
       return expr;
     }
 

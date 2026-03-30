@@ -596,10 +596,15 @@ export class ConverterEngine {
       if (/^If\s+(.+)\s+Then\s*$/i.test(trimmed)) {
         let cond = trimmed.replace(/^If\s+/i, '').replace(/\s+Then\s*$/i, '');
         cond = cond.replace(/\bAnd\b/gi, '&&').replace(/\bOr\b/gi, '||');
-        cond = cond.replace(/\bNot\b/gi, '!').replace(/\b<>\b/g, '!==');
+        cond = cond.replace(/\bNot\b/gi, '!').replace(/<>/g, '!==');
+        cond = cond.replace(/\bMod\b/gi, '%').replace(/\bIs\b/gi, '===');
         cond = cond.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
         // Fix single = to === for comparisons (but not assignments)
         cond = cond.replace(/([^=!<>])=([^=])/g, '$1===$2');
+        // Integer division \ -> Math.floor division
+        cond = cond.replace(/\\/g, '/');
+        // Exponentiation ^ -> **
+        cond = cond.replace(/\^/g, '**');
         tsLines.push(`if (${cond}) {`);
         continue;
       }
@@ -608,6 +613,12 @@ export class ConverterEngine {
       if (/^ElseIf\s+(.+)\s+Then\s*$/i.test(trimmed)) {
         let cond = trimmed.replace(/^ElseIf\s+/i, '').replace(/\s+Then\s*$/i, '');
         cond = cond.replace(/\bAnd\b/gi, '&&').replace(/\bOr\b/gi, '||');
+        cond = cond.replace(/\bNot\b/gi, '!').replace(/<>/g, '!==');
+        cond = cond.replace(/\bMod\b/gi, '%').replace(/\bIs\b/gi, '===');
+        cond = cond.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
+        cond = cond.replace(/([^=!<>])=([^=])/g, '$1===$2');
+        cond = cond.replace(/\\/g, '/');
+        cond = cond.replace(/\^/g, '**');
         tsLines.push(`} else if (${cond}) {`);
         continue;
       }
@@ -720,7 +731,12 @@ export class ConverterEngine {
       let tsLine = trimmed;
       tsLine = tsLine.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
       tsLine = tsLine.replace(/\bAnd\b/gi, '&&').replace(/\bOr\b/gi, '||');
-      tsLine = tsLine.replace(/\bNot\b/gi, '!').replace(/\b<>\b/g, '!==');
+      tsLine = tsLine.replace(/\bNot\b/gi, '!').replace(/<>/g, '!==');
+      tsLine = tsLine.replace(/\bMod\b/gi, '%').replace(/\bIs\b/gi, '===');
+      tsLine = tsLine.replace(/\bTrue\b/gi, 'true').replace(/\bFalse\b/gi, 'false');
+      tsLine = tsLine.replace(/([^=!<>])=([^=])/g, '$1===$2');
+      tsLine = tsLine.replace(/\\/g, '/');
+      tsLine = tsLine.replace(/\^/g, '**');
       tsLine = this.convertVbsStringExpression(tsLine);
       tsLines.push(`// TODO: ${tsLine}`);
     }
